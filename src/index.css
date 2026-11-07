@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+  
+  .font-mono, [data-font="mono"] {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media print {
+  /* Hide non-printable app UI elements during receipt printing */
+  .no-print, nav, header, aside, .app-nav, .action-buttons {
+    display: none !important;
+  }
+  
+  body {
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .print-only-container {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 20px !important;
+  }
+
+  .printable-receipt {
+    box-shadow: none !important;
+    border: 1px solid #111 !important;
+    margin: 0 auto !important;
+    page-break-inside: avoid;
+  }
+}

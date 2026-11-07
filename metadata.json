@@ -1,0 +1,6 @@
+{
+  "name": "EduPay Scolarité",
+  "description": "Plateforme web de paiement de scolarité par Mobile Money (Orange, Moov, MTN) et encaissement au guichet scolaire avec gestion d'admissions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
