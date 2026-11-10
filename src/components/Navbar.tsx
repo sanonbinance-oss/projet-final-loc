@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, GraduationCap, ArrowRight, ShieldCheck, LogOut } from 'lucide-react';
+import { Lock, GraduationCap, ArrowRight, ShieldCheck, LogOut, Coins, FileSpreadsheet } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface NavbarProps {
@@ -10,8 +10,8 @@ interface NavbarProps {
   onLogoutAdmin: () => void;
   activeParentTab: 'paiement' | 'inscription' | 'tarifs' | 'contact';
   setActiveParentTab: (tab: 'paiement' | 'inscription' | 'tarifs' | 'contact') => void;
-  activeAdminTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'api';
-  setActiveAdminTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'api') => void;
+  activeAdminTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api';
+  setActiveAdminTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api') => void;
   pendingAdmissionsCount: number;
 }
 
@@ -54,7 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </span>
         </button>
 
-        {/* Zone 2: 4-5 concise single-line text links */}
+        {/* Zone 2: Concise single-line text links */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
           {currentRole === 'parent' ? (
             <>
@@ -147,6 +147,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Gestion des Élèves
               </button>
               <button
+                onClick={() => setActiveAdminTab('tarifs')}
+                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  activeAdminTab === 'tarifs'
+                    ? 'text-emerald-700 font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Tarifs & Scolarités
+              </button>
+              <button
                 onClick={() => setActiveAdminTab('transactions')}
                 className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   activeAdminTab === 'transactions'
@@ -154,7 +164,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Journal Financier
+                Journal de Caisse
               </button>
               <button
                 onClick={() => setActiveAdminTab('api')}

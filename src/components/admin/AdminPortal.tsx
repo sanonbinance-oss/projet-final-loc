@@ -7,24 +7,25 @@ import {
   Receipt, 
   KeyRound,
   ArrowLeft,
-  School,
-  Building
+  Building,
+  Coins
 } from 'lucide-react';
 import { AdmissionRequest, Payment, Student } from '../../types';
-import { DEFAULT_SCHOOL_INFO } from '../../services/store';
+import { DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { DashboardTab } from './DashboardTab';
 import { CashDeskTab } from './CashDeskTab';
 import { StudentsTab } from './StudentsTab';
 import { AdmissionsTab } from './AdmissionsTab';
 import { TransactionsTab } from './TransactionsTab';
 import { ApiConfigTab } from './ApiConfigTab';
+import { TarifsTab } from './TarifsTab';
 
 interface AdminPortalProps {
   students: Student[];
   payments: Payment[];
   admissions: AdmissionRequest[];
-  activeTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'api';
-  setActiveTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'api') => void;
+  activeTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api';
+  setActiveTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api') => void;
   onOpenReceipt: (payment: Payment, scolariteTotale?: number, montantPaye?: number) => void;
   onRefreshData: () => void;
   onSwitchToParent: () => void;
@@ -64,12 +65,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <h1 className="text-base font-extrabold text-slate-900">
                   {school.nom}
                 </h1>
-                <span className="text-[11px] font-semibold text-slate-500 font-mono">
-                  {school.anneeScolaire}
+                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-mono">
+                  Session {CURRENT_SCHOOL_YEAR}
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                Poste Secrétariat & Encaissement · Bureau Central
+                Poste Secrétariat & Intendance · Gestion des Inscriptions et Recouvrement
               </p>
             </div>
           </div>
@@ -141,6 +142,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('tarifs')}
+            className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'tarifs'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Coins className="w-3.5 h-3.5" />
+            <span>Tarifs & Scolarités</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('transactions')}
             className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'transactions'
@@ -201,6 +214,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             onGoToCashDesk={handleGoToCashDesk}
             onStudentsChanged={() => onRefreshData()}
           />
+        )}
+
+        {activeTab === 'tarifs' && (
+          <TarifsTab />
         )}
 
         {activeTab === 'transactions' && (

@@ -18,6 +18,8 @@ import { Payment, Student } from '../../types';
 import { SchoolStore } from '../../services/store';
 import { PaymentService } from '../../services/paymentService';
 
+import { ReenrollmentModal } from '../parent/ReenrollmentModal';
+
 interface CashDeskTabProps {
   students: Student[];
   onPaymentRecorded: (payment: Payment) => void;
@@ -45,6 +47,7 @@ export const CashDeskTab: React.FC<CashDeskTabProps> = ({
   const [telephonePayeur, setTelephonePayeur] = useState(selectedStudent?.telephoneParent || '');
   const [agentNom, setAgentNom] = useState('Mme Sanfo (Secrétaire Comptable)');
   const [notes, setNotes] = useState('Règlement scolarité + don au guichet');
+  const [isReenrollModalOpen, setIsReenrollModalOpen] = useState(false);
 
   const filteredStudents = searchQuery.trim() === ''
     ? []
@@ -184,38 +187,46 @@ export const CashDeskTab: React.FC<CashDeskTabProps> = ({
               </div>
             )}
 
-            {/* Quick picker list */}
+            {/* Quick picker list or empty state */}
             <div className="pt-2 border-t border-slate-100">
-              <span className="text-[11px] text-slate-500 block mb-2">
-                Élèves enregistrés :
-              </span>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                {students.map((s) => {
-                  const isSelected = selectedStudent?.id === s.id;
-                  const reste = Math.max(0, s.scolariteTotale - s.montantPaye);
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => handleSelectStudent(s)}
-                      className={`w-full p-2 rounded-xl text-left text-xs transition-colors flex items-center justify-between border cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-medium'
-                          : 'bg-slate-50 hover:bg-slate-100 border-slate-200/80 text-slate-700'
-                      }`}
-                    >
-                      <div className="truncate pr-2">
-                        <span className="font-bold">{s.prenom} {s.nom}</span>
-                        <span className="text-[11px] text-slate-500 block">
-                          {s.classe} · {s.matricule}
-                        </span>
-                      </div>
-                      <span className="font-mono text-[11px] shrink-0">
-                        {reste === 0 ? 'Soldé' : `${reste.toLocaleString('fr-FR')} F`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              {students.length > 0 ? (
+                <>
+                  <span className="text-[11px] text-slate-500 block mb-2">
+                    Élèves enregistrés :
+                  </span>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {students.map((s) => {
+                      const isSelected = selectedStudent?.id === s.id;
+                      const reste = Math.max(0, s.scolariteTotale - s.montantPaye);
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => handleSelectStudent(s)}
+                          className={`w-full p-2 rounded-xl text-left text-xs transition-colors flex items-center justify-between border cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-medium'
+                              : 'bg-slate-50 hover:bg-slate-100 border-slate-200/80 text-slate-700'
+                          }`}
+                        >
+                          <div className="truncate pr-2">
+                            <span className="font-bold">{s.prenom} {s.nom}</span>
+                            <span className="text-[11px] text-slate-500 block">
+                              {s.classe} · {s.matricule}
+                            </span>
+                          </div>
+                          <span className="font-mono text-[11px] shrink-0">
+                            {reste === 0 ? 'Soldé' : `${reste.toLocaleString('fr-FR')} F`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-500">
+                  Aucun élève enregistré dans la base pour le moment.
+                </div>
+              )}
             </div>
           </div>
 
@@ -235,6 +246,26 @@ export const CashDeskTab: React.FC<CashDeskTabProps> = ({
                   {selectedStudent.matricule}
                 </span>
               </div>
+
+              {/* Re-enrollment callout if imported student */}
+              {selectedStudent.statutReinscription === 'EN_ATTENTE_REINSCRIPTION' && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs text-amber-950 space-y-2">
+                  <div className="font-bold flex items-center justify-between">
+                    <span>Élève 2026-2027 en attente de réinscription</span>
+                    <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded">Action requise</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800">
+                    Cet élève a été importé. Validez sa nouvelle classe avant d'enregistrer le paiement de sa scolarité.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsReenrollModalOpen(true)}
+                    className="w-full py-1.5 bg-amber-700 hover:bg-amber-800 text-white font-bold rounded-lg cursor-pointer transition-colors text-center text-xs"
+                  >
+                    Valider la Réinscription 2027-2028
+                  </button>
+                </div>
+              )}
 
               {/* Academic decision and 3rd term report card info */}
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5 text-xs">
@@ -519,6 +550,23 @@ export const CashDeskTab: React.FC<CashDeskTabProps> = ({
           </div>
         </div>
       </div>
+
+      {selectedStudent && (
+        <ReenrollmentModal
+          isOpen={isReenrollModalOpen}
+          onClose={() => setIsReenrollModalOpen(false)}
+          student={selectedStudent}
+          onReenrolled={(updated) => {
+            setSelectedStudent(updated);
+            const reste = Math.max(0, updated.scolariteTotale - updated.montantPaye);
+            if (reste > 0) {
+              setMontantScolarite(Math.min(reste, 50000).toString());
+            } else {
+              setMontantScolarite('0');
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

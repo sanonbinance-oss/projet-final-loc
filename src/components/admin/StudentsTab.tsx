@@ -9,10 +9,17 @@ import {
   UserCheck, 
   AlertTriangle,
   X,
-  Check
+  Check,
+  UploadCloud,
+  FileSpreadsheet,
+  GraduationCap,
+  Sparkles,
+  ArrowRight
 } from 'lucide-react';
 import { Student } from '../../types';
-import { SchoolStore } from '../../services/store';
+import { SchoolStore, CURRENT_SCHOOL_YEAR, PREVIOUS_SCHOOL_YEAR } from '../../services/store';
+import { BulkImportModal } from './BulkImportModal';
+import { ReenrollmentModal } from '../parent/ReenrollmentModal';
 
 interface StudentsTabProps {
   students: Student[];
@@ -28,18 +35,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
   const [search, setSearch] = useState('');
   const [classeFilter, setClasseFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'SOLDE' | 'PARTIEL' | 'IMPAYE'>('ALL');
+  const [anneeFilter, setAnneeFilter] = useState<string>('ALL');
 
-  // Modals
+  // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [studentToReenroll, setStudentToReenroll] = useState<Student | null>(null);
 
   // New Student Form State
   const [newNom, setNewNom] = useState('');
   const [newPrenom, setNewPrenom] = useState('');
-  const [newDateNaissance, setNewDateNaissance] = useState('2017-05-10');
-  const [newClasse, setNewClasse] = useState('CP1');
-  const [newScolarite, setNewScolarite] = useState(160000);
+  const [newDateNaissance, setNewDateNaissance] = useState('2013-05-10');
+  const [newClasse, setNewClasse] = useState('6ème');
+  const [newScolarite, setNewScolarite] = useState(200000);
   const [newNomParent, setNewNomParent] = useState('');
   const [newTelephoneParent, setNewTelephoneParent] = useState('');
   const [newAdresse, setNewAdresse] = useState('Ouagadougou');
@@ -52,23 +62,40 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
   const classesList = [
     'ALL',
-    'CP1',
-    'CP2',
-    'CE1',
-    'CE2',
-    'CM1',
-    'CM2',
     '6ème',
     '5ème',
     '4ème',
     '3ème',
-    'Seconde',
-    'Première',
-    'Terminale',
+    '2nde A',
+    '2nde C',
+    '1ère A',
+    '1ère D',
+    'Tle A',
+    'Tle D',
+    'BEP 1',
+    'BEP 2',
+    'Bac Pro 1',
+    'Bac Pro 2',
+    "C'",
+    "D'",
   ];
 
+  // Auto-set tuition when selecting a class in new student form
+  const handleClassChange = (classe: string) => {
+    setNewClasse(classe);
+    const tarif = SchoolStore.getTarifForClass(classe, CURRENT_SCHOOL_YEAR);
+    if (tarif) {
+      setNewScolarite(tarif.totalExigible);
+    }
+  };
+
   const filtered = students.filter((s) => {
-    if (classeFilter !== 'ALL' && s.classe !== classeFilter) return false;
+    if (classeFilter !== 'ALL' && !s.classe.toLowerCase().startsWith(classeFilter.toLowerCase())) return false;
+    if (anneeFilter !== 'ALL') {
+      const year = s.anneeScolaire || CURRENT_SCHOOL_YEAR;
+      if (anneeFilter === 'EN_ATTENTE' && s.statutReinscription !== 'EN_ATTENTE_REINSCRIPTION') return false;
+      if (anneeFilter !== 'EN_ATTENTE' && year !== anneeFilter) return false;
+    }
     
     const reste = s.scolariteTotale - s.montantPaye;
     if (statusFilter === 'SOLDE' && reste > 0) return false;
@@ -81,9 +108,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       s.nom.toLowerCase().includes(q) ||
       s.prenom.toLowerCase().includes(q) ||
       s.matricule.toLowerCase().includes(q) ||
-      s.telephoneParent.includes(q) ||
-      s.nomParent.toLowerCase().includes(q) ||
-      (s.etablissementOrigine && s.etablissementOrigine.toLowerCase().includes(q))
+      (s.telephoneParent && s.telephoneParent.includes(q)) ||
+      (s.nomParent && s.nomParent.toLowerCase().includes(q))
     );
   });
 
@@ -99,6 +125,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       prenom: newPrenom.trim(),
       dateNaissance: newDateNaissance,
       classe: newClasse,
+      anneeScolaire: CURRENT_SCHOOL_YEAR,
       scolariteTotale: Number(newScolarite),
       nomParent: newNomParent.trim() || 'Parent',
       telephoneParent: newTelephoneParent.trim(),
@@ -109,6 +136,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       motifVenue: newMotifVenue,
       descriptionVenue: newDescriptionVenue.trim() || undefined,
       montantDonTotal: Number(newMontantDon) || 0,
+      statutReinscription: 'REINSCRIT',
     });
 
     setIsAddModalOpen(false);
@@ -137,32 +165,58 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
     onStudentsChanged();
   };
 
+  const pendingReenrollCount = students.filter(
+    (s) => s.statutReinscription === 'EN_ATTENTE_REINSCRIPTION'
+  ).length;
+
   return (
     <div className="space-y-6">
-      {/* Top Header */}
+      {/* Top Header & Actions Strip */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-slate-900">
-            Base de Données des Élèves ({students.length})
-          </h2>
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-base font-bold text-slate-900">
+              Base des Élèves & Effectifs ({students.length})
+            </h2>
+            {pendingReenrollCount > 0 && (
+              <span className="text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full">
+                {pendingReenrollCount} en attente de réinscription
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-500">
-            Consultez les effectifs, ajustez les montants de scolarité, ajoutez de nouveaux élèves ou radiez des dossiers.
+            Gestion des effectifs pour l'année scolaire <strong>{CURRENT_SCHOOL_YEAR}</strong>, import massif Excel/CSV des anciens élèves et suivi du recouvrement.
           </p>
         </div>
 
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-xs transition-colors flex items-center gap-2 cursor-pointer shadow-sm shrink-0"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>Inscrire un Nouvel Élève</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          {/* Bulk Import Button */}
+          <button
+            onClick={() => setIsBulkImportOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            <span>Importer en Masse (Excel / CSV)</span>
+          </button>
+
+          {/* Add Student Button */}
+          <button
+            onClick={() => {
+              handleClassChange('6ème');
+              setIsAddModalOpen(true);
+            }}
+            className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-xs transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Inscrire un Élève</span>
+          </button>
+        </div>
       </div>
 
       {/* Search & Filter Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs">
         {/* Search */}
-        <div className="sm:col-span-5 relative">
+        <div className="sm:col-span-4 relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
             <Search className="w-4 h-4" />
           </div>
@@ -175,8 +229,23 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
           />
         </div>
 
+        {/* Year Filter */}
+        <div className="sm:col-span-3 flex items-center gap-2">
+          <span className="text-slate-500 shrink-0">Session:</span>
+          <select
+            value={anneeFilter}
+            onChange={(e) => setAnneeFilter(e.target.value)}
+            className="w-full px-2.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+          >
+            <option value="ALL">Toutes les sessions</option>
+            <option value={CURRENT_SCHOOL_YEAR}>Inscrits {CURRENT_SCHOOL_YEAR}</option>
+            <option value="EN_ATTENTE">En attente réinscription</option>
+            <option value={PREVIOUS_SCHOOL_YEAR}>Historique {PREVIOUS_SCHOOL_YEAR}</option>
+          </select>
+        </div>
+
         {/* Class Filter */}
-        <div className="sm:col-span-4 flex items-center gap-2">
+        <div className="sm:col-span-3 flex items-center gap-2">
           <span className="text-slate-500 shrink-0">Classe:</span>
           <select
             value={classeFilter}
@@ -192,16 +261,16 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         </div>
 
         {/* Status Filter */}
-        <div className="sm:col-span-3 flex items-center gap-2">
+        <div className="sm:col-span-2 flex items-center gap-2">
           <span className="text-slate-500 shrink-0">Solde:</span>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'SOLDE' | 'PARTIEL' | 'IMPAYE')}
             className="w-full px-2.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
           >
-            <option value="ALL">Tous les statuts</option>
+            <option value="ALL">Tous</option>
             <option value="SOLDE">Soldés (100%)</option>
-            <option value="PARTIEL">Partiellement payés</option>
+            <option value="PARTIEL">Partiels</option>
             <option value="IMPAYE">Impayés (0%)</option>
           </select>
         </div>
@@ -210,8 +279,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
       {/* Table of Students */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
         {filtered.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-xs">
-            Aucun élève ne correspond à votre recherche.
+          <div className="p-12 text-center text-slate-500 text-xs space-y-2">
+            <p>Aucun élève ne correspond à vos filtres.</p>
+            <p className="text-[11px] text-slate-400">
+              Astuce : Cliquez sur « Importer en Masse » pour insérer la liste 2026-2027 depuis un fichier CSV ou Excel.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -220,8 +292,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 <tr>
                   <th className="py-3 px-4">Matricule</th>
                   <th className="py-3 px-4">Nom & Prénom</th>
-                  <th className="py-3 px-4">Classe</th>
-                  <th className="py-3 px-4">Parent & Téléphone</th>
+                  <th className="py-3 px-4">Classe & Session</th>
+                  <th className="py-3 px-4">Statut Fin Année</th>
+                  <th className="py-3 px-4">Parent & Contact</th>
                   <th className="py-3 px-4 text-right">Scolarité Totale</th>
                   <th className="py-3 px-4 text-right">Déjà Versé</th>
                   <th className="py-3 px-4 text-right">Reste à Payer</th>
@@ -232,10 +305,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 {filtered.map((s) => {
                   const reste = Math.max(0, s.scolariteTotale - s.montantPaye);
                   const isSold = reste === 0;
+                  const isAwaiting = s.statutReinscription === 'EN_ATTENTE_REINSCRIPTION';
 
                   return (
                     <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3 px-4 font-mono font-semibold text-slate-700">
+                      <td className="py-3 px-4 font-mono font-semibold text-slate-800">
                         {s.matricule}
                       </td>
 
@@ -244,14 +318,38 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                           {s.prenom} {s.nom}
                         </span>
                         <span className="text-[11px] text-slate-500">
-                          Inscrit le {s.dateInscription}
+                          {s.classePrecedente ? `Ex: ${s.classePrecedente}` : `Inscrit le ${s.dateInscription}`}
                         </span>
                       </td>
 
                       <td className="py-3 px-4">
-                        <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                          {s.classe}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                            {s.classe}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
+                            {s.anneeScolaire || CURRENT_SCHOOL_YEAR}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        {isAwaiting ? (
+                          <div className="space-y-1">
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                              À réinscrire {CURRENT_SCHOOL_YEAR}
+                            </span>
+                            {s.statutFinAnnee && (
+                              <span className="text-[10px] text-slate-500 block">
+                                {s.statutFinAnnee === 'REDOUBLANT' ? 'Redoublant' : 'Passant'} {s.moyenneAnnuelle ? `(${s.moyenneAnnuelle}/20)` : ''}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-900">
+                            Inscrit {CURRENT_SCHOOL_YEAR} ✓
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-3 px-4">
@@ -280,6 +378,18 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
 
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Re-enroll button if waiting */}
+                          {isAwaiting && (
+                            <button
+                              onClick={() => setStudentToReenroll(s)}
+                              className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] transition-colors cursor-pointer shadow-sm flex items-center gap-1"
+                              title="Valider la réinscription 2027-2028"
+                            >
+                              <GraduationCap className="w-3.5 h-3.5" />
+                              <span>Réinscrire</span>
+                            </button>
+                          )}
+
                           {/* Cash Desk button */}
                           <button
                             onClick={() => onGoToCashDesk(s.id)}
@@ -317,14 +427,35 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         )}
       </div>
 
-      {/* MODAL 1: ADD NEW STUDENT */}
+      {/* MODAL: BULK CSV/EXCEL IMPORT */}
+      <BulkImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        onImportCompleted={() => {
+          onStudentsChanged();
+        }}
+      />
+
+      {/* MODAL: RE-ENROLLMENT FOR IMPORTED STUDENT */}
+      {studentToReenroll && (
+        <ReenrollmentModal
+          isOpen={Boolean(studentToReenroll)}
+          onClose={() => setStudentToReenroll(null)}
+          student={studentToReenroll}
+          onReenrolled={() => {
+            onStudentsChanged();
+          }}
+        />
+      )}
+
+      {/* MODAL: ADD NEW STUDENT */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <UserPlus className="w-4 h-4 text-emerald-700" />
-                Ajouter un Nouvel Élève au Registre
+                Inscrire un Élève (Session {CURRENT_SCHOOL_YEAR})
               </h3>
               <button
                 onClick={() => setIsAddModalOpen(false)}
@@ -344,7 +475,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                     value={newNom}
                     onChange={(e) => setNewNom(e.target.value)}
                     placeholder="Ex: OUÉDRAOGO"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
                   />
                 </div>
                 <div>
@@ -365,7 +496,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                   <label className="block font-semibold text-slate-700 mb-1">Classe *</label>
                   <select
                     value={newClasse}
-                    onChange={(e) => setNewClasse(e.target.value)}
+                    onChange={(e) => handleClassChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
                   >
                     {classesList.filter((c) => c !== 'ALL').map((c) => (
@@ -374,14 +505,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Scolarité totale (FCFA) *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Scolarité totale exigible (FCFA) *</label>
                   <input
                     type="number"
                     step="5000"
                     required
                     value={newScolarite}
                     onChange={(e) => setNewScolarite(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono font-bold"
                   />
                 </div>
               </div>
@@ -487,7 +618,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                     type="text"
                     value={newDescriptionVenue}
                     onChange={(e) => setNewDescriptionVenue(e.target.value)}
-                    placeholder="Ex: La famille a emménagé à Dassasgho ou envoyé pour suivi..."
+                    placeholder="Ex: La famille a emménagé dans le secteur..."
                     className="w-full px-2 py-1.5 rounded-lg border border-slate-300 focus:outline-none bg-white text-xs"
                   />
                 </div>
@@ -526,7 +657,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         </div>
       )}
 
-      {/* MODAL 2: EDIT STUDENT */}
+      {/* MODAL: EDIT STUDENT */}
       {editingStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200">
@@ -552,7 +683,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                     required
                     value={editingStudent.nom}
                     onChange={(e) => setEditingStudent({ ...editingStudent, nom: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
                   />
                 </div>
                 <div>
@@ -588,7 +719,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                     required
                     value={editingStudent.scolariteTotale}
                     onChange={(e) => setEditingStudent({ ...editingStudent, scolariteTotale: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono font-bold"
                   />
                 </div>
               </div>
@@ -628,7 +759,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                   type="submit"
                   className="px-4 py-2 font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white cursor-pointer shadow-sm"
                 >
-                  Sauvegarder les modifications
+                  Sauvegarder
                 </button>
               </div>
             </form>
@@ -636,7 +767,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
         </div>
       )}
 
-      {/* MODAL 3: DELETE / RADIER CONFIRMATION */}
+      {/* MODAL: DELETE / RADIER CONFIRMATION */}
       {studentToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 text-xs">
@@ -677,7 +808,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({
                 onClick={handleDeleteConfirm}
                 className="px-4 py-2 font-semibold rounded-lg bg-rose-600 hover:bg-rose-500 text-white cursor-pointer shadow-sm"
               >
-                Confirmer le retrait
+                Confirmer la radiation
               </button>
             </div>
           </div>

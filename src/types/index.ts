@@ -18,6 +18,20 @@ export type TransferReason =
   | 'EXCELLENCE' 
   | 'AUTRE';
 
+/**
+ * Grille dynamique des tarifs de scolarité par classe et par année scolaire
+ */
+export interface TuitionTariff {
+  id: string;
+  anneeScolaire: string; // Ex: '2027-2028' ou '2026-2027'
+  niveau: string;        // Ex: '6ème', '5ème', '4ème', '3ème', '2nde A', '2nde C', '1ère A', '1ère D', 'Tle A', 'Tle D'
+  montantScolarite: number; // Montant net scolarité en FCFA
+  fraisInscription: number; // Frais d'inscription / réinscription (par défaut 0)
+  fraisAnnexes: number;     // Tenue, APE, bibliothèque, etc.
+  totalExigible: number;    // Calculé : montantScolarite + fraisInscription + fraisAnnexes
+  updatedAt: string;
+}
+
 export interface Student {
   id: string;
   matricule: string;
@@ -25,6 +39,7 @@ export interface Student {
   prenom: string;
   dateNaissance: string;
   classe: string;
+  anneeScolaire: string; // Ex: '2027-2028'
   scolariteTotale: number;
   montantPaye: number;
   nomParent: string;
@@ -33,7 +48,8 @@ export interface Student {
   adresse?: string;
   dateInscription: string;
   statut: 'inscrit' | 'radie';
-  // Nouveaux paramètres scolaires et transferts
+  
+  // Paramètres scolaires & transferts
   etablissementOrigine?: string;
   decisionBulletin?: AcademicDecision;
   moyenneAnnuelle?: number;
@@ -41,6 +57,13 @@ export interface Student {
   descriptionVenue?: string;
   bulletinNomFichier?: string;
   montantDonTotal?: number;
+
+  // Gestion de la bascule d'année et réinscriptions (2026-2027 -> 2027-2028)
+  anneeOrigine?: string;             // Ex: '2026-2027'
+  classePrecedente?: string;         // Ex: '6ème A'
+  statutFinAnnee?: 'PASSANT' | 'REDOUBLANT'; // Décision de l'année passée
+  statutReinscription?: 'EN_ATTENTE_REINSCRIPTION' | 'REINSCRIT';
+  fraisInscriptionPayes?: boolean;
 }
 
 export type AdmissionStatus = 'en_attente' | 'accepte' | 'refuse';
@@ -52,6 +75,7 @@ export interface AdmissionRequest {
   prenomEnfant: string;
   dateNaissance: string;
   classeDemandee: string;
+  anneeScolaire: string; // Ex: '2027-2028'
   nomParent: string;
   telephoneParent: string;
   emailParent?: string;
@@ -60,6 +84,7 @@ export interface AdmissionRequest {
   matriculeAttribue?: string;
   notes?: string;
   motifRefus?: string;
+  
   // Paramètres du bulletin du 3ème trimestre et transfert
   estNouveauTransfert: boolean;
   etablissementOrigine?: string;
@@ -68,7 +93,7 @@ export interface AdmissionRequest {
   motifVenue?: TransferReason;
   descriptionVenue?: string;
   bulletinNomFichier?: string;
-  montantDon: number; // Argent versé pour don / soutien
+  montantDon: number;
 }
 
 export interface Payment {
@@ -78,6 +103,7 @@ export interface Payment {
   studentMatricule: string;
   studentNom: string;
   studentClasse: string;
+  anneeScolaire?: string; // Ex: '2027-2028'
   montant: number; // Montant total encaissé (scolarité + don)
   montantScolarite: number;
   montantDon: number; // Don spécifique pour œuvres/soutien
@@ -95,7 +121,8 @@ export interface SchoolInfo {
   nom: string;
   devise: string;
   slogan: string;
-  anneeScolaire: string;
+  anneeScolaire: string; // Ex: '2027 - 2028'
+  anneePrecedente: string; // Ex: '2026 - 2027'
   telephone: string;
   email: string;
   adresse: string;

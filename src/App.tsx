@@ -53,7 +53,7 @@ export default function App() {
 
   // Tab navigation states
   const [activeParentTab, setActiveParentTab] = useState<'paiement' | 'inscription' | 'tarifs' | 'contact'>('paiement');
-  const [activeAdminTab, setActiveAdminTab] = useState<'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'api'>('dashboard');
+  const [activeAdminTab, setActiveAdminTab] = useState<'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api'>('dashboard');
 
   // Store data state
   const [students, setStudents] = useState<Student[]>(() => SchoolStore.getStudents());
@@ -237,7 +237,7 @@ export default function App() {
       {/* Footer (Cleaned: no links to admin for parents) */}
       <footer className="no-print border-t border-slate-200 bg-white py-6 px-4 text-center text-xs text-slate-500">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p>© 2025 - 2026 Groupe Scolaire Excellence & Avenir · Tous droits réservés.</p>
+          <p>© 2027 - 2028 Groupe Scolaire Excellence & Avenir · Tous droits réservés.</p>
           <div className="flex items-center gap-4 text-slate-400">
             <span>Discipline · Travail · Réussite</span>
             <span aria-hidden="true">·</span>

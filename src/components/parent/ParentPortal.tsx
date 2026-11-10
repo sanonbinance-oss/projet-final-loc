@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   Smartphone, 
@@ -14,12 +14,17 @@ import {
   HelpCircle,
   Sparkles,
   Printer,
-  HeartHandshake
+  HeartHandshake,
+  Coins,
+  GraduationCap,
+  RotateCw
 } from 'lucide-react';
-import { Payment, PaymentMethod, Student } from '../../types';
-import { SchoolStore, DEFAULT_SCHOOL_INFO } from '../../services/store';
+import { Payment, PaymentMethod, Student, TuitionTariff } from '../../types';
+import { SchoolStore, DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { PaymentService } from '../../services/paymentService';
 import { AdmissionForm } from './AdmissionForm';
+import { PaymentOtpModal } from './PaymentOtpModal';
+import { ReenrollmentModal } from './ReenrollmentModal';
 
 interface ParentPortalProps {
   students: Student[];
@@ -44,6 +49,9 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
     students.length > 0 ? students[0] : null
   );
 
+  // Dynamic tariffs state
+  const [tarifs, setTarifs] = useState<TuitionTariff[]>(() => SchoolStore.getTarifs(CURRENT_SCHOOL_YEAR));
+
   // Payment form state
   const [montant, setMontant] = useState<number>(50000);
   const [customMontant, setCustomMontant] = useState<string>('50000');
@@ -52,12 +60,27 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const [telephonePayeur, setTelephonePayeur] = useState('70213456');
   const [nomPayeur, setNomPayeur] = useState('Moussa Ouédraogo');
 
-  // Processing state
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStep, setProcessingStep] = useState('');
+  // Modals state
+  const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
+  const [isReenrollModalOpen, setIsReenrollModalOpen] = useState(false);
   const [lastCompletedPayment, setLastCompletedPayment] = useState<Payment | null>(null);
 
-  // Search filter
+  // Sync selectedStudent when students prop updates
+  useEffect(() => {
+    if (selectedStudent) {
+      const found = students.find((s) => s.id === selectedStudent.id);
+      if (found) setSelectedStudent(found);
+    } else if (students.length > 0) {
+      setSelectedStudent(students[0]);
+    }
+  }, [students]);
+
+  // Sync tariffs on tab switch or store change
+  useEffect(() => {
+    setTarifs(SchoolStore.getTarifs(CURRENT_SCHOOL_YEAR));
+  }, [activeTab]);
+
+  // Search filter (handles matricule, nom, prenom, tel)
   const searchResults = searchQuery.trim() === ''
     ? []
     : students.filter((s) => {
@@ -66,7 +89,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
           s.nom.toLowerCase().includes(q) ||
           s.prenom.toLowerCase().includes(q) ||
           s.matricule.toLowerCase().includes(q) ||
-          s.telephoneParent.includes(q)
+          (s.telephoneParent && s.telephoneParent.includes(q))
         );
       });
 
@@ -83,7 +106,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
     setCustomMontant(defaultVal.toString());
   };
 
-  const handlePay = async (e: React.FormEvent) => {
+  const handleOpenOtpModal = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudent) return;
 
@@ -93,52 +116,52 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
       return;
     }
 
-    setIsProcessing(true);
-    setProcessingStep('Initialisation du paiement sécurisé...');
+    if (!telephonePayeur || telephonePayeur.trim().length < 8) {
+      alert('Veuillez saisir un numéro de téléphone valide pour recevoir le code OTP.');
+      return;
+    }
 
-    try {
-      const paymentResult = await PaymentService.traiterPaiementMobileMoney(
-        {
-          studentId: selectedStudent.id,
-          studentMatricule: selectedStudent.matricule,
-          studentNom: `${selectedStudent.prenom} ${selectedStudent.nom}`,
-          studentClasse: selectedStudent.classe,
-          montantScolarite: finalMontant,
-          montantDon,
-          operateur,
-          telephone: telephonePayeur,
-          nomPayeur: nomPayeur || selectedStudent.nomParent,
-          notes: montantDon > 0 
-            ? `Scolarité (${finalMontant} F) + Don (${montantDon} F) - ${selectedStudent.classe}` 
-            : `Règlement scolarité ${selectedStudent.classe}`,
-        },
-        (step) => setProcessingStep(step)
-      );
+    // Open interactive OTP modal
+    setIsOtpModalOpen(true);
+  };
 
-      // Save to store
-      SchoolStore.addPayment(paymentResult);
-      setLastCompletedPayment(paymentResult);
-      onPaymentSuccess(paymentResult);
+  const handleOtpConfirmSuccess = async (otpCode: string) => {
+    if (!selectedStudent) return;
 
-      // Refresh selected student data
-      const updatedStudent = SchoolStore.getStudents().find(
-        (s) => s.id === selectedStudent.id
-      );
-      if (updatedStudent) {
-        setSelectedStudent(updatedStudent);
-      }
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Échec du paiement.';
-      alert(errorMessage);
-    } finally {
-      setIsProcessing(false);
-      setProcessingStep('');
+    const finalMontant = Number(customMontant) || 0;
+
+    const paymentResult = await PaymentService.traiterPaiementMobileMoney({
+      studentId: selectedStudent.id,
+      studentMatricule: selectedStudent.matricule,
+      studentNom: `${selectedStudent.prenom} ${selectedStudent.nom}`,
+      studentClasse: selectedStudent.classe,
+      montantScolarite: finalMontant,
+      montantDon,
+      operateur,
+      telephone: telephonePayeur,
+      nomPayeur: nomPayeur || selectedStudent.nomParent,
+      notes: montantDon > 0 
+        ? `Scolarité (${finalMontant} F) + Don (${montantDon} F) - ${selectedStudent.classe} [Code OTP validé: ${otpCode}]` 
+        : `Règlement scolarité ${selectedStudent.classe} [OTP: ${otpCode}]`,
+    });
+
+    // Save payment and update student balance
+    SchoolStore.addPayment(paymentResult);
+    setLastCompletedPayment(paymentResult);
+    onPaymentSuccess(paymentResult);
+
+    // Refresh selected student state
+    const updatedStudent = SchoolStore.getStudents().find((s) => s.id === selectedStudent.id);
+    if (updatedStudent) {
+      setSelectedStudent(updatedStudent);
     }
   };
 
   const resteAPayer = selectedStudent 
     ? Math.max(0, selectedStudent.scolariteTotale - selectedStudent.montantPaye)
     : 0;
+
+  const isAwaitingReenrollment = selectedStudent?.statutReinscription === 'EN_ATTENTE_REINSCRIPTION';
 
   return (
     <div className="min-h-screen pb-16">
@@ -148,19 +171,19 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
         <div className="max-w-5xl mx-auto relative z-10 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-700/50 border border-emerald-500/40 text-emerald-200 text-xs font-semibold mb-4">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Portail Officiel des Familles · Session 2025-2026</span>
+            <span>Portail Officiel des Familles · Rentrée {CURRENT_SCHOOL_YEAR}</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white mb-4 max-w-3xl mx-auto" style={{ textWrap: 'balance' }}>
-            Réglez la scolarité de vos enfants en ligne en toute simplicité
+            Réglez la scolarité et réinscrivez vos enfants en ligne en toute sérénité
           </h1>
 
           <p className="text-sm sm:text-base text-emerald-100/90 max-w-2xl mx-auto mb-8 font-normal leading-relaxed">
-            Plus besoin de faire la queue au secrétariat. Payez instantanément par 
-            <strong> Orange Money</strong>, <strong>Moov Africa</strong> ou <strong>MTN</strong> et téléchargez votre reçu certifié.
+            Paiement interactif et sécurisé par code OTP via 
+            <strong> Orange Money</strong>, <strong>Moov Africa</strong> ou <strong>MTN</strong> avec délivrance immédiate de reçu officiel certifié.
           </p>
 
-          {/* Dual Action Shortcut for parents */}
+          {/* Action Shortcut for parents */}
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button
               onClick={() => setActiveTab('paiement')}
@@ -184,13 +207,13 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('tarifs')}
-              className={`px-5 py-2.5 text-xs font-medium rounded-xl transition-all cursor-pointer ${
+              className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm ${
                 activeTab === 'tarifs'
-                  ? 'bg-white text-slate-900'
+                  ? 'bg-white text-slate-900 shadow-lg'
                   : 'bg-emerald-700/60 hover:bg-emerald-700 text-white border border-emerald-500/30'
               }`}
             >
-              Grille Tarifaire
+              Grille Tarifaire {CURRENT_SCHOOL_YEAR}
             </button>
           </div>
         </div>
@@ -210,19 +233,19 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                   </div>
                   <div>
                     <h4 className="font-bold text-emerald-950 text-sm">
-                      Paiement de {lastCompletedPayment.montant.toLocaleString('fr-FR')} FCFA validé !
+                      Paiement de {lastCompletedPayment.montant.toLocaleString('fr-FR')} FCFA validé avec succès !
                     </h4>
                     <p className="text-xs text-emerald-800">
-                      Réf: <span className="font-mono font-semibold">{lastCompletedPayment.reference}</span> · L'information a été transmise en direct au secrétariat.
+                      Réf Quittance : <span className="font-mono font-bold">{lastCompletedPayment.reference}</span> · La comptabilité a reçu la notification instantanée.
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => onOpenReceipt(lastCompletedPayment)}
-                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap shadow-sm"
+                  className="px-4 py-2.5 text-xs font-semibold rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer flex items-center gap-2 whitespace-nowrap shadow-sm"
                 >
                   <Receipt className="w-4 h-4" />
-                  <span>Voir & Imprimer le Reçu</span>
+                  <span>Imprimer le Reçu Officiel</span>
                 </button>
               </div>
             )}
@@ -243,14 +266,14 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Tapez le nom, matricule ou tél..."
+                      placeholder="Tapez le nom, prénom ou matricule..."
                       className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
 
                   {/* Search dropdown results */}
                   {searchResults.length > 0 && (
-                    <div className="mt-2 border border-slate-200 rounded-xl max-h-48 overflow-y-auto divide-y divide-slate-100 bg-white shadow-lg">
+                    <div className="mt-2 border border-slate-200 rounded-xl max-h-56 overflow-y-auto divide-y divide-slate-100 bg-white shadow-lg">
                       {searchResults.map((s) => (
                         <button
                           key={s.id}
@@ -260,7 +283,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                           <div>
                             <p className="font-bold text-slate-900">{s.prenom} {s.nom}</p>
                             <p className="text-[11px] text-slate-500">
-                              Matricule: {s.matricule} · Classe: {s.classe}
+                              Matricule: {s.matricule} · {s.classe} {s.statutReinscription === 'EN_ATTENTE_REINSCRIPTION' ? '(Attente Réinscription)' : ''}
                             </p>
                           </div>
                           <span className="text-emerald-700 font-semibold text-[11px]">Choisir</span>
@@ -269,40 +292,64 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                     </div>
                   )}
 
-                  {/* Fast selection list for testing */}
+                  {/* Student list */}
                   <div className="mt-4 pt-3 border-t border-slate-100">
-                    <span className="text-[11px] text-slate-500 block mb-2">
-                      Ou sélectionnez un élève pour essayer rapidement :
-                    </span>
-                    <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                      {students.slice(0, 5).map((s) => {
-                        const isSelected = selectedStudent?.id === s.id;
-                        const reste = Math.max(0, s.scolariteTotale - s.montantPaye);
-                        return (
-                          <button
-                            key={s.id}
-                            onClick={() => handleSelectStudent(s)}
-                            className={`w-full p-2.5 rounded-xl text-left text-xs transition-colors flex items-center justify-between border cursor-pointer ${
-                              isSelected
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-medium'
-                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200/80 text-slate-700'
-                            }`}
-                          >
-                            <div className="truncate pr-2">
-                              <span className="font-bold">{s.prenom} {s.nom}</span>
-                              <span className="text-slate-500 block text-[11px]">
-                                {s.classe} · {s.matricule}
-                              </span>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <span className="font-mono text-[11px] block">
-                                {reste === 0 ? 'Soldé' : `${reste.toLocaleString('fr-FR')} F`}
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {students.length > 0 ? (
+                      <>
+                        <span className="text-[11px] text-slate-500 block mb-2">
+                          Élèves enregistrés ({students.length}) :
+                        </span>
+                        <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                          {students.map((s) => {
+                            const isSelected = selectedStudent?.id === s.id;
+                            const reste = Math.max(0, s.scolariteTotale - s.montantPaye);
+                            const isWaiting = s.statutReinscription === 'EN_ATTENTE_REINSCRIPTION';
+                            return (
+                              <button
+                                key={s.id}
+                                onClick={() => handleSelectStudent(s)}
+                                className={`w-full p-2.5 rounded-xl text-left text-xs transition-colors flex items-center justify-between border cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-medium'
+                                    : 'bg-slate-50 hover:bg-slate-100 border-slate-200/80 text-slate-700'
+                                }`}
+                              >
+                                <div className="truncate pr-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold">{s.prenom} {s.nom}</span>
+                                    {isWaiting && (
+                                      <span className="text-[9px] font-bold bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded">
+                                        À réinscrire
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-slate-500 block text-[11px]">
+                                    {s.classe} · {s.matricule}
+                                  </span>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="font-mono text-[11px] block">
+                                    {isWaiting ? 'Bascule 27-28' : reste === 0 ? 'Soldé' : `${reste.toLocaleString('fr-FR')} F`}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-2">
+                        <p className="text-xs text-slate-600 font-medium">
+                          Aucun élève enregistré pour l'instant.
+                        </p>
+                        <button
+                          onClick={() => setActiveTab('inscription')}
+                          className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-xs transition-colors cursor-pointer"
+                        >
+                          Faire une Demande d'Admission
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -312,7 +359,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                          Élève Sélectionné
+                          Dossier Élève
                         </span>
                         <h3 className="font-bold text-slate-900 text-base mt-1">
                           {selectedStudent.prenom} {selectedStudent.nom}
@@ -323,14 +370,37 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                       </span>
                     </div>
 
+                    {/* Reenrollment Callout Banner if imported from 2026-2027 */}
+                    {isAwaitingReenrollment && (
+                      <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 text-xs text-amber-950 space-y-2 animate-in fade-in">
+                        <div className="flex items-start gap-2 font-bold">
+                          <GraduationCap className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                          <div>
+                            <p>Élève retrouvé de la session 2026-2027 !</p>
+                            <p className="text-[11px] font-normal text-amber-800">
+                              Statut conseil : <strong>{selectedStudent.statutFinAnnee === 'REDOUBLANT' ? 'Redoublant' : 'Passant en classe supérieure'}</strong>. Veuillez valider sa réinscription pour l'année {CURRENT_SCHOOL_YEAR}.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsReenrollModalOpen(true)}
+                          className="w-full py-2 rounded-lg bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <span>Confirmer la Réinscription {CURRENT_SCHOOL_YEAR}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
-                        <span className="text-slate-500 block">Classe :</span>
+                        <span className="text-slate-500 block">Classe actuelle :</span>
                         <span className="font-semibold text-slate-800">{selectedStudent.classe}</span>
                       </div>
                       <div>
                         <span className="text-slate-500 block">Année scolaire :</span>
-                        <span className="font-semibold text-slate-800">{school.anneeScolaire}</span>
+                        <span className="font-semibold text-slate-800">{selectedStudent.anneeScolaire || CURRENT_SCHOOL_YEAR}</span>
                       </div>
                       <div>
                         <span className="text-slate-500 block">Parent / Tuteur :</span>
@@ -347,7 +417,9 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                       <div className="flex justify-between text-xs mb-1">
                         <span className="text-slate-600">Progression du règlement :</span>
                         <span className="font-mono font-bold text-slate-900">
-                          {Math.round((selectedStudent.montantPaye / selectedStudent.scolariteTotale) * 100)}%
+                          {selectedStudent.scolariteTotale > 0
+                            ? Math.round((selectedStudent.montantPaye / selectedStudent.scolariteTotale) * 100)
+                            : 0}%
                         </span>
                       </div>
                       <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
@@ -356,9 +428,9 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                           style={{
                             width: `${Math.min(
                               100,
-                              Math.round(
-                                (selectedStudent.montantPaye / selectedStudent.scolariteTotale) * 100
-                              )
+                              selectedStudent.scolariteTotale > 0
+                                ? Math.round((selectedStudent.montantPaye / selectedStudent.scolariteTotale) * 100)
+                                : 0
                             )}%`,
                           }}
                         ></div>
@@ -372,13 +444,13 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                           </span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block">Déjà payé</span>
+                          <span className="text-slate-500 block">Déjà versé</span>
                           <span className="font-mono font-bold text-emerald-700">
                             {selectedStudent.montantPaye.toLocaleString('fr-FR')} F
                           </span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block">Reste à régler</span>
+                          <span className="text-slate-500 block">Reste à payer</span>
                           <span className="font-mono font-bold text-amber-700">
                             {resteAPayer.toLocaleString('fr-FR')} F
                           </span>
@@ -393,13 +465,13 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                 )}
               </div>
 
-              {/* Right Column: Checkout Form (Mobile Money) */}
+              {/* Right Column: Checkout Form (Mobile Money with OTP verification) */}
               <div className="lg:col-span-7">
                 <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7 shadow-sm">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
                     <div>
                       <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                        Étape 2 : Règlement Sécurisé
+                        Étape 2 : Règlement Sécurisé avec OTP
                       </span>
                       <h2 className="text-lg font-bold text-slate-900">
                         Paiement Mobile Money (Burkina Faso)
@@ -407,7 +479,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
                       <ShieldCheck className="w-4 h-4" />
-                      <span>Mode Simulation Actif</span>
+                      <span>Validation Interactive OTP</span>
                     </div>
                   </div>
 
@@ -420,7 +492,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                         Scolarité Entièrement Soldée !
                       </h3>
                       <p className="text-xs text-slate-600 max-w-sm mx-auto">
-                        Félicitations, la totalité de la scolarité de <strong>{selectedStudent.prenom} {selectedStudent.nom}</strong> a été réglée pour l'année scolaire en cours.
+                        Félicitations, la totalité de la scolarité de <strong>{selectedStudent.prenom} {selectedStudent.nom}</strong> a été réglée pour l'année scolaire {CURRENT_SCHOOL_YEAR}.
                       </p>
                       {lastCompletedPayment && (
                         <button
@@ -432,7 +504,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                       )}
                     </div>
                   ) : (
-                    <form onSubmit={handlePay} className="space-y-5">
+                    <form onSubmit={handleOpenOtpModal} className="space-y-5">
                       {/* Operator Selector */}
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
@@ -629,7 +701,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                             />
                           </div>
                           <span className="text-[10px] text-slate-400 mt-1 block">
-                            Le compte débité doit correspondre à ce numéro
+                            Le code de validation OTP sera envoyé à ce numéro
                           </span>
                         </div>
 
@@ -653,25 +725,12 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                         </div>
                       </div>
 
-                      {/* Processing feedback banner */}
-                      {isProcessing && (
-                        <div className="p-3.5 rounded-xl bg-slate-900 text-white flex items-center gap-3 animate-pulse">
-                          <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0"></div>
-                          <div className="text-xs">
-                            <p className="font-semibold">{processingStep}</p>
-                            <p className="text-[11px] text-slate-300">
-                              Veuillez patienter pendant la validation de l'opérateur...
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Submit Button */}
+                      {/* Submit / Trigger OTP Modal Button */}
                       <button
                         type="submit"
-                        disabled={isProcessing || !selectedStudent}
+                        disabled={!selectedStudent}
                         className={`w-full py-3.5 px-4 rounded-xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md ${
-                          isProcessing || !selectedStudent
+                          !selectedStudent
                             ? 'bg-slate-400 cursor-not-allowed'
                             : operateur === 'ORANGE_MONEY'
                             ? 'bg-[#FF7900] hover:bg-[#e06b00]'
@@ -684,16 +743,14 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                       >
                         <CreditCard className="w-4 h-4" />
                         <span>
-                          {isProcessing
-                            ? 'Paiement en cours...'
-                            : `Confirmer et Payer ${(Number(customMontant || 0) + montantDon).toLocaleString('fr-FR')} FCFA${
-                                montantDon > 0 ? ` (dont ${montantDon.toLocaleString('fr-FR')} F de don)` : ''
-                              }`}
+                          {`Lancer le paiement OTP : ${(Number(customMontant || 0) + montantDon).toLocaleString('fr-FR')} FCFA${
+                            montantDon > 0 ? ` (dont ${montantDon.toLocaleString('fr-FR')} F don)` : ''
+                          }`}
                         </span>
                       </button>
 
                       <p className="text-center text-[11px] text-slate-500">
-                        🔒 Paiement direct et sécurisé. Un reçu officiel téléchargeable est généré automatiquement dès la validation.
+                        🔒 Paiement interactif vérifié par SMS OTP. La quittance officielle est générée instantanément.
                       </p>
                     </form>
                   )}
@@ -704,10 +761,10 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                   <HelpCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
                   <div>
                     <h5 className="font-bold text-amber-950">
-                      Vous préférez payer sur place en espèces à l'école ?
+                      Règlement au Guichet Scolaire en Espèces
                     </h5>
                     <p className="mt-0.5 text-amber-800 leading-relaxed">
-                      Le guichet de la comptabilité est ouvert du lundi au vendredi de 07h30 à 15h30. La secrétaire enregistre votre versement en main propre et vous remet immédiatement votre reçu imprimé.
+                      Le guichet de l'intendance est ouvert du lundi au vendredi de 07h30 à 15h30. La secrétaire saisit votre versement liquide et vous délivre sur-le-champ votre reçu papier officiel.
                     </p>
                   </div>
                 </div>
@@ -725,19 +782,26 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
           />
         )}
 
-        {/* TAB 3: GRILLE DES TARIFS */}
+        {/* TAB 3: GRILLE DES TARIFS OFFICIELS DYNAMIQUES */}
         {activeTab === 'tarifs' && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm max-w-3xl mx-auto space-y-6">
-            <div>
-              <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block mb-1">
-                Année Scolaire {school.anneeScolaire}
-              </span>
-              <h2 className="text-2xl font-bold text-slate-900">
-                Grille Officielle des Frais de Scolarité
-              </h2>
-              <p className="text-xs text-slate-600 mt-1">
-                Les montants ci-dessous incluent les frais d'inscription, les fournitures pédagogiques de base et les activités périscolaires.
-              </p>
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm max-w-4xl mx-auto space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block mb-1">
+                  Année Scolaire {CURRENT_SCHOOL_YEAR}
+                </span>
+                <h2 className="text-2xl font-bold text-slate-900">
+                  Grille Officielle des Frais de Scolarité
+                </h2>
+                <p className="text-xs text-slate-600 mt-1">
+                  Tarification en vigueur configurée par le secrétariat pour l'ensemble des classes et cycles.
+                </p>
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold shrink-0">
+                <Coins className="w-4 h-4 text-emerald-600" />
+                <span>Synchronisé en direct</span>
+              </div>
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
@@ -745,61 +809,42 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                 <thead className="bg-slate-100 text-slate-700 uppercase font-semibold text-[11px]">
                   <tr>
                     <th className="py-3 px-4">Cycle & Classes</th>
+                    <th className="py-3 px-4">Scolarité Nette</th>
                     <th className="py-3 px-4">Frais Inscription</th>
-                    <th className="py-3 px-4">Tranches (3x)</th>
-                    <th className="py-3 px-4 text-right">Total Annuel</th>
+                    <th className="py-3 px-4">Frais Annexes (Tenue/APE)</th>
+                    <th className="py-3 px-4 text-right">Total Annuel Exigible</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 font-sans">
-                  <tr>
-                    <td className="py-3 px-4 font-semibold text-slate-900">
-                      Maternelle (Petite, Moyenne, Grande)
-                    </td>
-                    <td className="py-3 px-4 font-mono text-slate-600">30 000 F</td>
-                    <td className="py-3 px-4 font-mono text-slate-600">3 × 40 000 F</td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">150 000 FCFA</td>
-                  </tr>
-                  <tr className="bg-slate-50/50">
-                    <td className="py-3 px-4 font-semibold text-slate-900">
-                      Primaire CP1 - CP2
-                    </td>
-                    <td className="py-3 px-4 font-mono text-slate-600">35 000 F</td>
-                    <td className="py-3 px-4 font-mono text-slate-600">3 × 40 000 F</td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">155 000 FCFA</td>
-                  </tr>
-                  <tr>
-                    <td className="py-3 px-4 font-semibold text-slate-900">
-                      Primaire CE1 - CM2
-                    </td>
-                    <td className="py-3 px-4 font-mono text-slate-600">40 000 F</td>
-                    <td className="py-3 px-4 font-mono text-slate-600">3 × 45 000 F</td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">175 000 FCFA</td>
-                  </tr>
-                  <tr className="bg-slate-50/50">
-                    <td className="py-3 px-4 font-semibold text-slate-900">
-                      Collège (6ème - 3ème)
-                    </td>
-                    <td className="py-3 px-4 font-mono text-slate-600">50 000 F</td>
-                    <td className="py-3 px-4 font-mono text-slate-600">3 × 60 000 F</td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">230 000 FCFA</td>
-                  </tr>
-                  <tr>
-                    <td className="py-3 px-4 font-semibold text-slate-900">
-                      Lycée (Seconde - Terminale)
-                    </td>
-                    <td className="py-3 px-4 font-mono text-slate-600">60 000 F</td>
-                    <td className="py-3 px-4 font-mono text-slate-600">3 × 65 000 F</td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">255 000 FCFA</td>
-                  </tr>
+                  {tarifs.map((t, idx) => (
+                    <tr key={t.id} className={idx % 2 === 1 ? 'bg-slate-50/50' : ''}>
+                      <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                        <span>{t.niveau}</span>
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-700">
+                        {t.montantScolarite.toLocaleString('fr-FR')} FCFA
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-600">
+                        {t.fraisInscription > 0 ? `${t.fraisInscription.toLocaleString('fr-FR')} F` : '0 F'}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-600">
+                        {t.fraisAnnexes > 0 ? `${t.fraisAnnexes.toLocaleString('fr-FR')} F` : 'Néant'}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-extrabold text-slate-900 text-sm">
+                        {t.totalExigible.toLocaleString('fr-FR')} FCFA
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
             <div className="bg-slate-50 p-4 rounded-xl text-xs space-y-1.5 text-slate-600">
-              <p className="font-semibold text-slate-800">Échéancier des règlements :</p>
-              <p>• 1ère tranche : À l'inscription ou avant le 15 Octobre 2025</p>
-              <p>• 2ème tranche : Avant le 15 Janvier 2026</p>
-              <p>• 3ème tranche (Solde) : Avant le 15 Mars 2026</p>
+              <p className="font-semibold text-slate-800">Modalités et échéancier des versements :</p>
+              <p>• <strong>1ère tranche :</strong> À l'inscription / réinscription (minimum 50 000 FCFA ou totalité de l'inscription)</p>
+              <p>• <strong>2ème tranche :</strong> Avant le 15 Janvier 2028</p>
+              <p>• <strong>3ème tranche (Solde) :</strong> Avant le 15 Mars 2028</p>
             </div>
           </div>
         )}
@@ -833,27 +878,46 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
               </div>
 
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                <h4 className="font-bold text-slate-900 text-sm">Horaires du Guichet de Caisse</h4>
-                <p className="text-slate-600">Du Lundi au Vendredi : 07h30 - 15h30 sans interruption</p>
-                <p className="text-slate-600">Samedi : 08h00 - 12h00</p>
-                <p className="text-slate-600">Dimanche & Jours fériés : Fermé</p>
-                <p className="text-emerald-700 font-semibold text-[11px] pt-1">
-                  ✓ Paiements par Mobile Money disponibles 24h/24 et 7j/7 sur ce site
-                </p>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between">
-              <div>
-                <p className="font-bold text-xs">Paiement certifié & Quittance instantanée</p>
-                <p className="text-[11px] text-emerald-800">
-                  Chaque versement effectué sur ce portail est instantanément enregistré et délivre une quittance officielle imprimable.
-                </p>
+                <h4 className="font-bold text-slate-900 text-sm">Horaires d'Ouverture Caisse</h4>
+                <p className="text-slate-600">Du Lundi au Vendredi :</p>
+                <p className="font-semibold text-slate-800">07h30 - 12h30 · 15h00 - 17h30</p>
+                <p className="text-slate-600 mt-2">Samedi :</p>
+                <p className="font-semibold text-slate-800">08h00 - 12h00 (Sur permanence)</p>
               </div>
             </div>
           </div>
         )}
       </main>
+
+      {/* OTP Verification Modal */}
+      {selectedStudent && (
+        <PaymentOtpModal
+          isOpen={isOtpModalOpen}
+          onClose={() => setIsOtpModalOpen(false)}
+          student={selectedStudent}
+          montantScolarite={Number(customMontant) || 0}
+          montantDon={montantDon}
+          totalMontant={(Number(customMontant) || 0) + montantDon}
+          operateur={operateur}
+          telephone={telephonePayeur}
+          nomPayeur={nomPayeur}
+          onConfirmSuccess={handleOtpConfirmSuccess}
+        />
+      )}
+
+      {/* Reenrollment Modal */}
+      {selectedStudent && (
+        <ReenrollmentModal
+          isOpen={isReenrollModalOpen}
+          onClose={() => setIsReenrollModalOpen(false)}
+          student={selectedStudent}
+          onReenrolled={(updated) => {
+            setSelectedStudent(updated);
+            const reste = Math.max(0, updated.scolariteTotale - updated.montantPaye);
+            setCustomMontant(reste > 0 ? Math.min(reste, 50000).toString() : '0');
+          }}
+        />
+      )}
     </div>
   );
 };
