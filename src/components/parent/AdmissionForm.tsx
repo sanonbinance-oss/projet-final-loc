@@ -41,6 +41,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
   const [motifVenue, setMotifVenue] = useState<TransferReason>('DEMENAGEMENT');
   const [descriptionVenue, setDescriptionVenue] = useState('');
   const [bulletinFichier, setBulletinFichier] = useState<string>('bulletin_3eme_trimestre_officiel.pdf');
+  const [bulletinUrl, setBulletinUrl] = useState<string>('');
   const [hasUploadedFile, setHasUploadedFile] = useState(false);
 
   // Donation / Support funds
@@ -81,8 +82,17 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setBulletinFichier(e.target.files[0].name);
+      const file = e.target.files[0];
+      setBulletinFichier(file.name);
       setHasUploadedFile(true);
+
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        if (uploadEvent.target?.result) {
+          setBulletinUrl(uploadEvent.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -118,6 +128,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
         motifVenue: estNouveauTransfert ? motifVenue : 'EXCELLENCE',
         descriptionVenue: descriptionVenue.trim(),
         bulletinNomFichier: bulletinFichier,
+        bulletinUrl: bulletinUrl || undefined,
         montantDon: donValue,
       });
 

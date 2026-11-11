@@ -66,6 +66,29 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
   const [isReenrollModalOpen, setIsReenrollModalOpen] = useState(false);
   const [lastCompletedPayment, setLastCompletedPayment] = useState<Payment | null>(null);
+  const [pendingVerificationPayment, setPendingVerificationPayment] = useState<Payment | null>(null);
+  const [rejectionMessage, setRejectionMessage] = useState<string | null>(null);
+
+  // Auto-unlock receipt as soon as secretary validates in real time
+  useEffect(() => {
+    if (!pendingVerificationPayment) return;
+    const unsubscribe = SchoolStore.subscribe(() => {
+      const allPayments = SchoolStore.getPayments();
+      const match = allPayments.find((p) => p.id === pendingVerificationPayment.id);
+      if (match) {
+        if (match.statut === 'SUCCES') {
+          setPendingVerificationPayment(null);
+          setRejectionMessage(null);
+          setLastCompletedPayment(match);
+          onPaymentSuccess(match);
+        } else if (match.statut === 'ECHOUE') {
+          setPendingVerificationPayment(null);
+          setRejectionMessage(match.motifRejetPaiement || 'Fonds non reçus sur le terminal de l\'école');
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [pendingVerificationPayment, onPaymentSuccess]);
 
   // Sync selectedStudent when students prop updates
   useEffect(() => {
@@ -156,15 +179,15 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
       operateur,
       telephone: telephonePayeur,
       nomPayeur: nomPayeur || selectedStudent.nomParent,
+      codeOtp: otpCode,
       notes: montantDon > 0 
-        ? `Scolarité (${finalMontant} F) + Don (${montantDon} F) - ${selectedStudent.classe} [Code OTP validé: ${otpCode}]` 
-        : `Règlement scolarité ${selectedStudent.classe} [OTP: ${otpCode}]`,
+        ? `Scolarité (${finalMontant} F) + Don (${montantDon} F) - ${selectedStudent.classe} [Code OTP: ${otpCode}]` 
+        : `Règlement scolarité ${selectedStudent.classe} [Code OTP: ${otpCode}]`,
     });
 
-    // Save payment and update student balance
+    // Save pending payment awaiting secretary cash verification
     SchoolStore.addPayment(paymentResult);
-    setLastCompletedPayment(paymentResult);
-    onPaymentSuccess(paymentResult);
+    setPendingVerificationPayment(paymentResult);
 
     // Refresh selected student state
     const updatedStudent = SchoolStore.getStudents().find((s) => s.id === selectedStudent.id);
@@ -257,6 +280,68 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                 >
                   <Receipt className="w-4 h-4" />
                   <span>Imprimer le Reçu Officiel</span>
+                </button>
+              </div>
+            )}
+
+            {/* Pending Mobile Money Secretary Verification Banner */}
+            {pendingVerificationPayment && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-6 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                    <Clock className="w-6 h-6 animate-spin text-white" style={{ animationDuration: '4s' }} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-black uppercase tracking-wider">
+                        Étape 2 / 2 · En attente de validation secrétariat
+                      </span>
+                      <span className="text-xs text-amber-800 font-mono font-bold">
+                        Réf: {pendingVerificationPayment.reference}
+                      </span>
+                    </div>
+                    <h4 className="font-extrabold text-amber-950 text-base mt-1">
+                      Paiement de {pendingVerificationPayment.montant.toLocaleString('fr-FR')} FCFA transmis au secrétariat
+                    </h4>
+                    <p className="text-xs text-amber-900 mt-1 max-w-2xl leading-relaxed">
+                      Code OTP / Réf mobile saisi : <span className="font-mono font-bold text-amber-950 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">{pendingVerificationPayment.codeOtp || 'Saisi'}</span>
+                      <br />
+                      La secrétaire vérifie actuellement la réception effective du versement sur le numéro officiel de l'école (<strong>+226 70 00 11 22</strong>). Dès confirmation par le secrétariat, <strong>votre reçu officiel se débloquera immédiatement</strong> !
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto shrink-0">
+                  <button
+                    onClick={() => {
+                      SchoolStore.validateMobileMoneyPayment(pendingVerificationPayment.id, 'Secrétaire Démo');
+                    }}
+                    className="w-full sm:w-auto px-4 py-2.5 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-700 text-white transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                    title="Simuler la validation par la secrétaire sans changer d'onglet"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Tester la Validation Secrétaire</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Rejection Alert */}
+            {rejectionMessage && (
+              <div className="bg-rose-50 border border-rose-300 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                  <div>
+                    <h5 className="font-bold text-rose-950 text-xs">Paiement Mobile Money non validé</h5>
+                    <p className="text-xs text-rose-800">
+                      Motif du secrétariat : <strong>{rejectionMessage}</strong>. Veuillez vérifier que l'envoi a bien été débité de votre compte.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setRejectionMessage(null)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors"
+                >
+                  Fermer
                 </button>
               </div>
             )}

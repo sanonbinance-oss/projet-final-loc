@@ -7,7 +7,7 @@ export type PaymentMethod =
   | 'LIGDICASH' 
   | 'ESPECES_GUICHET';
 
-export type PaymentStatus = 'SUCCES' | 'EN_COURS' | 'ECHOUE';
+export type PaymentStatus = 'SUCCES' | 'EN_COURS' | 'ECHOUE' | 'EN_ATTENTE_VERIFICATION';
 
 export type AcademicDecision = 'PASSAGE' | 'REDOUBLEMENT' | 'NOUVEAU_CYCLE';
 
@@ -93,6 +93,7 @@ export interface AdmissionRequest {
   motifVenue?: TransferReason;
   descriptionVenue?: string;
   bulletinNomFichier?: string;
+  bulletinUrl?: string; // Data URL ou image du document réel téléversé
   montantDon: number;
 }
 
@@ -113,6 +114,9 @@ export interface Payment {
   statut: PaymentStatus;
   encaissePar: 'PARENT_EN_LIGNE' | 'SECRETAIRE_GUICHET';
   agentNom?: string;
+  codeOtp?: string;
+  dateValidationSecretaire?: string;
+  motifRejetPaiement?: string;
   date: string;
   notes?: string;
 }
@@ -143,6 +147,8 @@ export type AuditActionType =
   | 'IMPORT_MASSIF'
   | 'ENCAISSEMENT_ESPECES'
   | 'PAIEMENT_MOBILE_MONEY'
+  | 'VALIDATION_PAIEMENT_MOBILE_MONEY'
+  | 'REJET_PAIEMENT_MOBILE_MONEY'
   | 'AUTRE';
 
 export interface AuditLog {

@@ -740,14 +740,16 @@ export class SchoolStore {
     payments.unshift(payment);
     this.savePayments(payments);
 
-    // Update student balance
-    const students = this.getStudents();
-    const studentIndex = students.findIndex((s) => s.id === payment.studentId);
-    if (studentIndex !== -1) {
-      const student = students[studentIndex];
-      student.montantPaye = (student.montantPaye || 0) + payment.montantScolarite;
-      student.montantDonTotal = (student.montantDonTotal || 0) + (payment.montantDon || 0);
-      this.saveStudents(students);
+    // Only update student balance if already confirmed (ex: cash desk)
+    if (payment.statut === 'SUCCES') {
+      const students = this.getStudents();
+      const studentIndex = students.findIndex((s) => s.id === payment.studentId);
+      if (studentIndex !== -1) {
+        const student = students[studentIndex];
+        student.montantPaye = (student.montantPaye || 0) + payment.montantScolarite;
+        student.montantDonTotal = (student.montantDonTotal || 0) + (payment.montantDon || 0);
+        this.saveStudents(students);
+      }
     }
 
     // Sync in background to Supabase
@@ -775,7 +777,71 @@ export class SchoolStore {
     this.addAuditLog({
       typeAction: isEspeces ? 'ENCAISSEMENT_ESPECES' : 'PAIEMENT_MOBILE_MONEY',
       auteur: payment.agentNom || payment.encaissePar || 'Caisse Secrétariat',
-      description: `Règlement de ${payment.montant.toLocaleString()} FCFA pour ${payment.studentNom} (${payment.studentClasse}) - Quittance : ${payment.reference}`,
+      description: payment.statut === 'EN_ATTENTE_VERIFICATION'
+        ? `Nouvelle notification Mobile Money (${payment.mode}) de ${payment.montant.toLocaleString()} FCFA soumise par ${payment.nomPayeur} - En attente de vérification bancaire/SMS par la secrétaire`
+        : `Règlement de ${payment.montant.toLocaleString()} FCFA pour ${payment.studentNom} (${payment.studentClasse}) - Quittance : ${payment.reference}`,
+      details: {
+        reference: payment.reference,
+        montant: payment.montant,
+        mode: payment.mode,
+        payeur: payment.nomPayeur,
+        matricule: payment.studentMatricule,
+        statut: payment.statut,
+      },
+      niveauGravite: payment.statut === 'EN_ATTENTE_VERIFICATION' ? 'AVERTISSEMENT' : 'INFO',
+    });
+  }
+
+  /**
+   * Validation définitive d'un paiement Mobile Money par la secrétaire
+   * (après vérification de la réception effective des fonds sur le compte de l'école)
+   */
+  static validateMobileMoneyPayment(paymentId: string, agentNom: string = 'Secrétaire Principale'): Payment | null {
+    const payments = this.getPayments();
+    const index = payments.findIndex((p) => p.id === paymentId);
+    if (index === -1) return null;
+
+    const payment = payments[index];
+    payment.statut = 'SUCCES';
+    payment.dateValidationSecretaire = new Date().toISOString();
+    payment.agentNom = agentNom;
+    this.savePayments(payments);
+
+    // Update student balance
+    const students = this.getStudents();
+    const studentIndex = students.findIndex((s) => s.id === payment.studentId);
+    if (studentIndex !== -1) {
+      const student = students[studentIndex];
+      student.montantPaye = (student.montantPaye || 0) + payment.montantScolarite;
+      student.montantDonTotal = (student.montantDonTotal || 0) + (payment.montantDon || 0);
+      this.saveStudents(students);
+    }
+
+    // Sync to Supabase
+    SupabaseSyncService.syncPaiementToSupabase({
+      id: payment.id,
+      reference_quittance: payment.reference,
+      annee_scolaire: payment.anneeScolaire || CURRENT_SCHOOL_YEAR,
+      eleve_id: payment.studentId,
+      eleve_matricule: payment.studentMatricule,
+      nom_eleve: payment.studentNom,
+      classe_eleve: payment.studentClasse,
+      montant_total: payment.montant,
+      montant_scolarite: payment.montantScolarite,
+      montant_don: payment.montantDon,
+      mode_paiement: payment.mode,
+      encaisse_par: 'SECRETAIRE_GUICHET',
+      statut_paiement: 'SUCCES',
+      nom_payeur: payment.nomPayeur,
+      telephone_payeur: payment.telephonePayeur,
+      nom_agent: agentNom,
+      observations: `Paiement Mobile Money vérifié et validé par ${agentNom}. Reçu officiel débloqué.`,
+    });
+
+    this.addAuditLog({
+      typeAction: 'VALIDATION_PAIEMENT_MOBILE_MONEY',
+      auteur: agentNom,
+      description: `Validation & Quittance émise pour ${payment.studentNom} (${payment.studentClasse}) - Montant vérifié : ${payment.montant.toLocaleString()} FCFA (${payment.mode})`,
       details: {
         reference: payment.reference,
         montant: payment.montant,
@@ -785,6 +851,52 @@ export class SchoolStore {
       },
       niveauGravite: 'INFO',
     });
+
+    return payment;
+  }
+
+  /**
+   * Rejet d'un paiement Mobile Money si les fonds n'ont pas été reçus sur le téléphone de l'école
+   */
+  static rejectMobileMoneyPayment(paymentId: string, motif: string = 'Fonds non reçus sur le numéro de l\'établissement'): Payment | null {
+    const payments = this.getPayments();
+    const index = payments.findIndex((p) => p.id === paymentId);
+    if (index === -1) return null;
+
+    const payment = payments[index];
+    payment.statut = 'ECHOUE';
+    payment.motifRejetPaiement = motif;
+    this.savePayments(payments);
+
+    // Sync to Supabase
+    SupabaseSyncService.syncPaiementToSupabase({
+      id: payment.id,
+      reference_quittance: payment.reference,
+      annee_scolaire: payment.anneeScolaire || CURRENT_SCHOOL_YEAR,
+      eleve_id: payment.studentId,
+      eleve_matricule: payment.studentMatricule,
+      nom_eleve: payment.studentNom,
+      classe_eleve: payment.studentClasse,
+      montant_total: payment.montant,
+      montant_scolarite: payment.montantScolarite,
+      montant_don: payment.montantDon,
+      mode_paiement: payment.mode,
+      encaisse_par: payment.encaissePar,
+      statut_paiement: 'ECHOUE',
+      nom_payeur: payment.nomPayeur,
+      telephone_payeur: payment.telephonePayeur,
+      observations: `Paiement rejeté par la caisse. Motif : ${motif}`,
+    });
+
+    this.addAuditLog({
+      typeAction: 'REJET_PAIEMENT_MOBILE_MONEY',
+      auteur: 'Secrétaire Principale',
+      description: `Rejet du paiement Mobile Money de ${payment.montant.toLocaleString()} FCFA pour ${payment.studentNom} - Motif : ${motif}`,
+      details: { reference: payment.reference, montant: payment.montant, motif },
+      niveauGravite: 'CRITIQUE',
+    });
+
+    return payment;
   }
 
   /* ==========================================================================

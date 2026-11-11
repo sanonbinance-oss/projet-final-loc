@@ -48,6 +48,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [cashDeskInitialStudentId, setCashDeskInitialStudentId] = useState<string | null>(null);
 
   const pendingAdmissionsCount = admissions.filter((a) => a.statut === 'en_attente').length;
+  const pendingMobileCount = payments.filter((p) => p.statut === 'EN_ATTENTE_VERIFICATION').length;
 
   const handleGoToCashDesk = (studentId: string) => {
     setCashDeskInitialStudentId(studentId);
@@ -168,7 +169,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
           <button
             onClick={() => setActiveTab('transactions')}
-            className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer relative ${
               activeTab === 'transactions'
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -176,6 +177,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           >
             <Receipt className="w-3.5 h-3.5" />
             <span>Journal de Caisse ({payments.length})</span>
+            {pendingMobileCount > 0 && (
+              <span className="px-1.5 py-0.2 bg-amber-400 text-slate-950 font-bold rounded-full text-[10px] animate-pulse">
+                {pendingMobileCount}
+              </span>
+            )}
           </button>
 
           <button
@@ -249,6 +255,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           <TransactionsTab
             payments={payments}
             onOpenReceipt={onOpenReceipt}
+            onRefreshData={onRefreshData}
           />
         )}
 

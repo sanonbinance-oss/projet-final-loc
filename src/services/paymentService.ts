@@ -10,6 +10,7 @@ export interface PaymentSimulationOptions {
   operateur: PaymentMethod;
   telephone: string;
   nomPayeur: string;
+  codeOtp?: string;
   notes?: string;
 }
 
@@ -97,7 +98,8 @@ export class PaymentService {
         mode: options.operateur,
         telephonePayeur: options.telephone,
         nomPayeur: options.nomPayeur,
-        statut: 'SUCCES',
+        statut: 'EN_ATTENTE_VERIFICATION',
+        codeOtp: options.codeOtp,
         encaissePar: 'PARENT_EN_LIGNE',
         date: new Date().toISOString(),
         notes: options.notes || (don > 0 ? `Scolarité (${options.montantScolarite} F) + Don (${don} F)` : 'Règlement scolarité'),
