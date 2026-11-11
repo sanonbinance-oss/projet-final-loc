@@ -400,3 +400,49 @@ CREATE POLICY "Acces complet demandes" ON demandes_admission FOR ALL USING (true
 DROP POLICY IF EXISTS "Acces complet paiements" ON paiements;
 CREATE POLICY "Acces complet paiements" ON paiements FOR ALL USING (true) WITH CHECK (true);
 
+-- ----------------------------------------------------------------------------
+-- TABLE 7 : JOURNAL_ACTIVITES (Traçabilité, Audit & Sécurité réglementaire)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS journal_activites (
+    id VARCHAR(50) PRIMARY KEY,
+    date_action TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    type_action VARCHAR(50) NOT NULL,
+    auteur VARCHAR(150) NOT NULL DEFAULT 'Secrétaire Principale',
+    description TEXT NOT NULL,
+    details JSONB,
+    niveau_gravite VARCHAR(20) NOT NULL DEFAULT 'INFO'
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_activites(date_action DESC);
+CREATE INDEX IF NOT EXISTS idx_journal_type ON journal_activites(type_action);
+CREATE INDEX IF NOT EXISTS idx_journal_gravite ON journal_activites(niveau_gravite);
+
+ALTER TABLE journal_activites ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acces complet journal" ON journal_activites;
+CREATE POLICY "Acces complet journal" ON journal_activites FOR ALL USING (true) WITH CHECK (true);
+
+-- Initialisation de l'audit système
+INSERT INTO journal_activites (id, date_action, type_action, auteur, description, details, niveau_gravite)
+VALUES (
+    'LOG_INIT_SYSTEME',
+    CURRENT_TIMESTAMP,
+    'CONNEXION',
+    'Système PayKal EduPay',
+    'Initialisation de la base de données académique et activation du journal de traçabilité',
+    '{"version": "5.0", "session": "2027-2028"}',
+    'INFO'
+) ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- 8. DIFFUSION EN DIRECT REALTIME SUPABASE (MULTI-APPAREILS INSTANTANÉ)
+-- ============================================================================
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE demandes_admission, eleves, paiements, tarifs_scolarite, journal_activites;
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Si les tables sont déjà publiées ou si l'environnement diffère
+        NULL;
+END $$;
+
+

@@ -290,5 +290,137 @@ export class SupabaseSyncService {
       return false;
     }
   }
+
+  /**
+   * Tente de charger les demandes d'admission depuis Supabase
+   */
+  static async fetchDemandesAdmissionFromSupabase(): Promise<any[] | null> {
+    try {
+      const { data, error } = await supabase
+        .from('demandes_admission')
+        .select('*')
+        .order('date_demande', { ascending: false });
+
+      if (error) {
+        console.warn('[Supabase] Demandes d admission non disponibles:', error.message);
+        return null;
+      }
+      return data;
+    } catch (err) {
+      console.warn('[Supabase] Erreur fetch demandes:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Tente de charger les élèves depuis Supabase
+   */
+  static async fetchElevesFromSupabase(): Promise<any[] | null> {
+    try {
+      const { data, error } = await supabase
+        .from('eleves')
+        .select('*')
+        .order('date_creation', { ascending: false });
+
+      if (error) {
+        console.warn('[Supabase] Élèves non disponibles:', error.message);
+        return null;
+      }
+      return data;
+    } catch (err) {
+      console.warn('[Supabase] Erreur fetch eleves:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Tente de charger les paiements depuis Supabase
+   */
+  static async fetchPaiementsFromSupabase(): Promise<any[] | null> {
+    try {
+      const { data, error } = await supabase
+        .from('paiements')
+        .select('*')
+        .order('date_paiement', { ascending: false });
+
+      if (error) {
+        console.warn('[Supabase] Paiements non disponibles:', error.message);
+        return null;
+      }
+      return data;
+    } catch (err) {
+      console.warn('[Supabase] Erreur fetch paiements:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Tente de charger le journal d'audit depuis Supabase
+   */
+  static async fetchAuditLogsFromSupabase(): Promise<any[] | null> {
+    try {
+      const { data, error } = await supabase
+        .from('journal_activites')
+        .select('*')
+        .order('date_action', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        return null;
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Enregistre une entrée dans le journal d'activités Supabase
+   */
+  static async syncAuditLogToSupabase(log: {
+    id: string;
+    date_action: string;
+    type_action: string;
+    auteur: string;
+    description: string;
+    details?: Record<string, unknown>;
+    niveau_gravite: string;
+  }) {
+    try {
+      const { error } = await supabase.from('journal_activites').upsert(log, { onConflict: 'id' });
+      if (error) {
+        console.warn('[Supabase Sync Audit] Sync différée:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('[Supabase Sync Audit] Erreur:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Supprime un élève de Supabase
+   */
+  static async deleteEleveFromSupabase(studentId: string, matricule?: string) {
+    try {
+      let query = supabase.from('eleves').delete();
+      if (matricule) {
+        query = query.eq('matricule', matricule);
+      } else {
+        query = query.eq('id', studentId);
+      }
+      const { error } = await query;
+      if (error) {
+        console.warn('[Supabase Delete Eleve] Erreur:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('[Supabase Delete Eleve] Erreur réseau:', err);
+      return false;
+    }
+  }
 }
+
 

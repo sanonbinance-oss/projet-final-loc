@@ -9,8 +9,11 @@ import { SchoolStore } from './services/store';
 import { Navbar } from './components/Navbar';
 import { ParentPortal } from './components/parent/ParentPortal';
 import { AdminPortal } from './components/admin/AdminPortal';
+import { SecretaryLoginScreen } from './components/admin/SecretaryLoginScreen';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { SyncBanner } from './components/SyncBanner';
+import { SyncService } from './services/sync';
 import { CheckCircle2, ShieldCheck, Copy, Check } from 'lucide-react';
 
 /**
@@ -53,7 +56,7 @@ export default function App() {
 
   // Tab navigation states
   const [activeParentTab, setActiveParentTab] = useState<'paiement' | 'inscription' | 'tarifs' | 'contact'>('paiement');
-  const [activeAdminTab, setActiveAdminTab] = useState<'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api'>('dashboard');
+  const [activeAdminTab, setActiveAdminTab] = useState<'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api'>('dashboard');
 
   // Store data state
   const [students, setStudents] = useState<Student[]>(() => SchoolStore.getStudents());
@@ -73,6 +76,14 @@ export default function App() {
     setStudents(SchoolStore.getStudents());
     setPayments(SchoolStore.getPayments());
     setAdmissions(SchoolStore.getAdmissions());
+  }, []);
+
+  // Initialize Realtime Supabase synchronization on app mount
+  useEffect(() => {
+    SyncService.initialiser();
+    return () => {
+      SyncService.arreter();
+    };
   }, []);
 
   // Listen to URL changes (when user modifies browser query/hash)
@@ -123,6 +134,16 @@ export default function App() {
     setAdminAuthenticated(true);
     localStorage.setItem('edupay_admin_auth', 'true');
     setIsAdminRoute(true);
+
+    SchoolStore.addAuditLog({
+      typeAction: 'CONNEXION',
+      auteur: 'Secrétaire Principale',
+      description: 'Connexion réussie à l\'Espace Secrétariat via code PIN sécurisé',
+      details: {
+        timestamp: new Date().toISOString(),
+      },
+      niveauGravite: 'INFO',
+    });
   };
 
   const handleAdminLogout = () => {
@@ -148,6 +169,15 @@ export default function App() {
     setLiveToast(`Nouveau paiement de ${payment.montant.toLocaleString('fr-FR')} FCFA enregistré avec succès !`);
     setTimeout(() => setLiveToast(null), 5000);
   };
+
+  if (isAdminRoute && !adminAuthenticated) {
+    return (
+      <SecretaryLoginScreen
+        onSuccess={handleAdminLoginSuccess}
+        onReturnToPublic={handleAdminLogout}
+      />
+    );
+  }
 
   const currentRole: UserRole = isAdminRoute && adminAuthenticated ? 'admin' : 'parent';
 
@@ -185,6 +215,7 @@ export default function App() {
           /* PURE PARENT INTERFACE: Zero admin buttons, zero admin hints */
           <ParentPortal
             students={students}
+            admissions={admissions}
             onPaymentSuccess={handlePaymentSuccess}
             onOpenReceipt={(payment) => handleOpenReceipt(payment)}
             activeTab={activeParentTab}
@@ -220,6 +251,9 @@ export default function App() {
               </div>
             </div>
 
+            {/* Supabase Realtime synchronization status banner */}
+            <SyncBanner />
+
             <AdminPortal
               students={students}
               payments={payments}
@@ -233,18 +267,6 @@ export default function App() {
           </div>
         )}
       </div>
-
-      {/* Footer (Cleaned: no links to admin for parents) */}
-      <footer className="no-print border-t border-slate-200 bg-white py-6 px-4 text-center text-xs text-slate-500">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p>© 2027 - 2028 Groupe Scolaire Excellence & Avenir · Tous droits réservés.</p>
-          <div className="flex items-center gap-4 text-slate-400">
-            <span>Discipline · Travail · Réussite</span>
-            <span aria-hidden="true">·</span>
-            <span>Burkina Faso</span>
-          </div>
-        </div>
-      </footer>
 
       {/* Admin PIN Login Modal (Triggered when accessing the secret admin URL) */}
       <AdminLoginModal

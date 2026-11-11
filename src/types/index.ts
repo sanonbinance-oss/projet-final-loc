@@ -130,3 +130,28 @@ export interface SchoolInfo {
   pays: string;
   agrementMinisteriel: string;
 }
+
+export type AuditActionType = 
+  | 'CONNEXION'
+  | 'MODIFICATION_TARIF'
+  | 'VALIDATION_ADMISSION'
+  | 'REFUS_ADMISSION'
+  | 'SUPPRESSION_ELEVE'
+  | 'AJOUT_ELEVE'
+  | 'INSCRIPTION_MANUELLE'
+  | 'REINSCRIPTION_EFFECTUEE'
+  | 'IMPORT_MASSIF'
+  | 'ENCAISSEMENT_ESPECES'
+  | 'PAIEMENT_MOBILE_MONEY'
+  | 'AUTRE';
+
+export interface AuditLog {
+  id: string;
+  dateAction: string;
+  typeAction: AuditActionType;
+  auteur: string;
+  description: string;
+  details?: Record<string, unknown>;
+  niveauGravite: 'INFO' | 'AVERTISSEMENT' | 'CRITIQUE';
+}
+

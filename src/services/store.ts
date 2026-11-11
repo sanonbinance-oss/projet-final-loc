@@ -1,4 +1,4 @@
-import { AdmissionRequest, Payment, SchoolInfo, Student, TuitionTariff } from '../types';
+import { AdmissionRequest, Payment, SchoolInfo, Student, TuitionTariff, AuditLog, AuditActionType } from '../types';
 import { SupabaseSyncService } from './supabaseClient';
 
 export const CURRENT_SCHOOL_YEAR = '2027-2028';
@@ -198,6 +198,7 @@ const STORAGE_KEYS = {
   PAYMENTS: 'edupay_paiements_supabase_v5',
   SCHOOL: 'edupay_etablissement_supabase_v5',
   TARIFS: 'edupay_tarifs_supabase_v5',
+  AUDIT_LOGS: 'edupay_journal_activites_v5',
 };
 
 type Listener = () => void;
@@ -277,6 +278,14 @@ export class SchoolStore {
       frais_annexes: updated.fraisAnnexes,
     });
 
+    this.addAuditLog({
+      typeAction: 'MODIFICATION_TARIF',
+      auteur: 'Secrétaire Principale',
+      description: `Mise à jour tarif ${updated.niveau} (${updated.anneeScolaire}) : Scolarité ${updated.montantScolarite.toLocaleString()} F, Total ${updated.totalExigible.toLocaleString()} FCFA`,
+      details: { niveau: updated.niveau, annee: updated.anneeScolaire, total: updated.totalExigible },
+      niveauGravite: 'AVERTISSEMENT',
+    });
+
     return updated;
   }
 
@@ -299,6 +308,14 @@ export class SchoolStore {
       montant_scolarite: newTariff.montantScolarite,
       frais_inscription: newTariff.fraisInscription,
       frais_annexes: newTariff.fraisAnnexes,
+    });
+
+    this.addAuditLog({
+      typeAction: 'MODIFICATION_TARIF',
+      auteur: 'Secrétaire Principale',
+      description: `Nouveau barème tarifaire configuré pour ${newTariff.niveau} (${newTariff.anneeScolaire}) : Total ${newTariff.totalExigible.toLocaleString()} FCFA`,
+      details: { niveau: newTariff.niveau, total: newTariff.totalExigible },
+      niveauGravite: 'INFO',
     });
 
     return newTariff;
@@ -426,6 +443,14 @@ export class SchoolStore {
       statut_reinscription: newStudent.statutReinscription || 'REINSCRIT',
     });
 
+    this.addAuditLog({
+      typeAction: 'INSCRIPTION_MANUELLE',
+      auteur: 'Secrétaire Principale',
+      description: `Inscription de l'élève ${newStudent.prenom} ${newStudent.nom} en classe de ${newStudent.classe} (Matricule: ${newStudent.matricule})`,
+      details: { matricule: newStudent.matricule, classe: newStudent.classe, scolarite: newStudent.scolariteTotale },
+      niveauGravite: 'INFO',
+    });
+
     return newStudent;
   }
 
@@ -468,9 +493,20 @@ export class SchoolStore {
 
   static deleteStudent(studentId: string): boolean {
     const students = this.getStudents();
+    const student = students.find((s) => s.id === studentId);
     const filtered = students.filter((s) => s.id !== studentId);
     if (filtered.length !== students.length) {
       this.saveStudents(filtered);
+      if (student) {
+        SupabaseSyncService.deleteEleveFromSupabase(student.id, student.matricule);
+        this.addAuditLog({
+          typeAction: 'SUPPRESSION_ELEVE',
+          auteur: 'Secrétaire Principale',
+          description: `Suppression définitive de l'élève ${student.prenom} ${student.nom} (Matricule: ${student.matricule}, Classe: ${student.classe})`,
+          details: { studentId: student.id, matricule: student.matricule, classe: student.classe },
+          niveauGravite: 'CRITIQUE',
+        });
+      }
       return true;
     }
     return false;
@@ -572,6 +608,14 @@ export class SchoolStore {
     }));
     SupabaseSyncService.syncElevesBatchToSupabase(recordsToSync);
 
+    this.addAuditLog({
+      typeAction: 'IMPORT_MASSIF',
+      auteur: 'Secrétaire Principale',
+      description: `Importation en masse : ${created} nouvel(s) élève(s) créé(s), ${updated} mis à jour (${records.length} lignes traitées)`,
+      details: { total: records.length, created, updated, anneeOrigine, anneeCible },
+      niveauGravite: 'AVERTISSEMENT',
+    });
+
     return { created, updated, total: records.length };
   }
 
@@ -626,6 +670,14 @@ export class SchoolStore {
       scolarite_totale: student.scolariteTotale,
       montant_paye: student.montantPaye || 0,
       statut_reinscription: 'REINSCRIT',
+    });
+
+    this.addAuditLog({
+      typeAction: 'REINSCRIPTION_EFFECTUEE',
+      auteur: 'Secrétaire Principale',
+      description: `Réinscription confirmée pour ${student.prenom} ${student.nom} (${student.matricule}) en classe de ${student.classe}`,
+      details: { matricule: student.matricule, classe: student.classe, scolariteTotale: nouvelleScolariteTotale },
+      niveauGravite: 'INFO',
     });
 
     return student;
@@ -717,6 +769,21 @@ export class SchoolStore {
       telephone_payeur: payment.telephonePayeur,
       nom_agent: payment.agentNom,
       observations: payment.notes,
+    });
+
+    const isEspeces = payment.mode === 'ESPECES_GUICHET';
+    this.addAuditLog({
+      typeAction: isEspeces ? 'ENCAISSEMENT_ESPECES' : 'PAIEMENT_MOBILE_MONEY',
+      auteur: payment.agentNom || payment.encaissePar || 'Caisse Secrétariat',
+      description: `Règlement de ${payment.montant.toLocaleString()} FCFA pour ${payment.studentNom} (${payment.studentClasse}) - Quittance : ${payment.reference}`,
+      details: {
+        reference: payment.reference,
+        montant: payment.montant,
+        mode: payment.mode,
+        payeur: payment.nomPayeur,
+        matricule: payment.studentMatricule,
+      },
+      niveauGravite: 'INFO',
     });
   }
 
@@ -830,6 +897,14 @@ export class SchoolStore {
       matricule_attribue: student.matricule,
     });
 
+    this.addAuditLog({
+      typeAction: 'VALIDATION_ADMISSION',
+      auteur: 'Secrétaire Principale',
+      description: `Validation du dossier d'admission de ${req.prenomEnfant} ${req.nomEnfant} (${req.classeDemandee}). Matricule attribué : ${student.matricule}`,
+      details: { requestId: req.id, matricule: student.matricule, classe: req.classeDemandee, scolariteTotale },
+      niveauGravite: 'INFO',
+    });
+
     return student;
   }
 
@@ -853,7 +928,71 @@ export class SchoolStore {
         statut_admission: 'REFUSE',
         motif_refus: req.motifRefus,
       });
+
+      this.addAuditLog({
+        typeAction: 'REFUS_ADMISSION',
+        auteur: 'Secrétaire Principale',
+        description: `Refus de la demande d'admission pour ${req.prenomEnfant} ${req.nomEnfant} (${req.classeDemandee}). Motif : ${req.motifRefus}`,
+        details: { requestId: req.id, motif: req.motifRefus },
+        niveauGravite: 'AVERTISSEMENT',
+      });
     }
+  }
+
+  /* ==========================================================================
+     JOURNAL D'AUDIT & TRAÇABILITÉ (Transparence totale)
+     ========================================================================== */
+  static getAuditLogs(): AuditLog[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
+      if (stored) return JSON.parse(stored);
+    } catch {
+      // fallback
+    }
+    return [];
+  }
+
+  static saveAuditLogs(logs: AuditLog[]) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs));
+      notifyListeners();
+    }
+  }
+
+  static addAuditLog(entry: {
+    typeAction: AuditActionType;
+    auteur?: string;
+    description: string;
+    details?: Record<string, unknown>;
+    niveauGravite?: 'INFO' | 'AVERTISSEMENT' | 'CRITIQUE';
+  }): AuditLog {
+    const logs = this.getAuditLogs();
+    const newLog: AuditLog = {
+      id: 'LOG_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      dateAction: new Date().toISOString(),
+      typeAction: entry.typeAction,
+      auteur: entry.auteur || 'Secrétaire Principale',
+      description: entry.description,
+      details: entry.details,
+      niveauGravite: entry.niveauGravite || 'INFO',
+    };
+    logs.unshift(newLog);
+    if (logs.length > 200) logs.pop();
+    this.saveAuditLogs(logs);
+
+    // Sync direct to Supabase
+    SupabaseSyncService.syncAuditLogToSupabase({
+      id: newLog.id,
+      date_action: newLog.dateAction,
+      type_action: newLog.typeAction,
+      auteur: newLog.auteur,
+      description: newLog.description,
+      details: newLog.details,
+      niveau_gravite: newLog.niveauGravite,
+    });
+
+    return newLog;
   }
 
   static getSchoolInfo(): SchoolInfo {
@@ -872,6 +1011,7 @@ export class SchoolStore {
     this.saveAdmissions([]);
     this.savePayments([]);
     this.saveTarifs(DEFAULT_TARIFS_2027_2028);
+    this.saveAuditLogs([]);
   }
 
   static subscribe(listener: Listener) {

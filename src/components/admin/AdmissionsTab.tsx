@@ -77,11 +77,17 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
       {/* Top Banner & KPI summary */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded border border-amber-200">
+              Étape Obligatoire Avant Paiement
+            </span>
+            <span className="text-xs text-slate-500">Contrôle Secrétariat</span>
+          </div>
           <h2 className="text-base font-bold text-slate-900">
-            Admissions & Contrôle des Bulletins du 3ème Trimestre
+            Validation des Admissions & Bulletins du 3ème Trimestre
           </h2>
-          <p className="text-xs text-slate-500">
-            Vérifiez si l'élève est admis en classe supérieure ou redoublant, consultez son bulletin, sa raison de venue et son don.
+          <p className="text-xs text-slate-500 mt-0.5">
+            Tant qu'une demande est en attente, le parent ne peut pas payer. Validez le dossier pour lui attribuer son matricule et débloquer son paiement.
           </p>
         </div>
 
@@ -305,11 +311,11 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => handleAccept(req)}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold transition-colors flex items-center gap-1 cursor-pointer shadow-sm"
-                              title="Valider la place et inscrire l'élève"
+                              className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm text-xs"
+                              title="Valider l'inscription, attribuer le matricule et autoriser le parent à payer"
                             >
                               <Check className="w-3.5 h-3.5" />
-                              <span>Accepter</span>
+                              <span>Valider & Débloquer Paiement</span>
                             </button>
                             <button
                               onClick={() => setRefusalModalId(req.id)}

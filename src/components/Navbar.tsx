@@ -1,6 +1,7 @@
 import React from 'react';
 import { Lock, GraduationCap, ArrowRight, ShieldCheck, LogOut, Coins, FileSpreadsheet } from 'lucide-react';
 import { UserRole } from '../types';
+import { SyncBanner } from './SyncBanner';
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -10,8 +11,8 @@ interface NavbarProps {
   onLogoutAdmin: () => void;
   activeParentTab: 'paiement' | 'inscription' | 'tarifs' | 'contact';
   setActiveParentTab: (tab: 'paiement' | 'inscription' | 'tarifs' | 'contact') => void;
-  activeAdminTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api';
-  setActiveAdminTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api') => void;
+  activeAdminTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api';
+  setActiveAdminTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api') => void;
   pendingAdmissionsCount: number;
 }
 
@@ -39,10 +40,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               setActiveAdminTab('dashboard');
             }
           }}
-          className="text-lg font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0 flex items-center gap-2 cursor-pointer text-left"
+          className="text-lg font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0 flex items-center gap-2.5 cursor-pointer text-left group"
         >
-          <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shadow-sm">
-            EP
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 text-white flex items-center justify-center shadow-md shadow-emerald-900/20 ring-2 ring-emerald-500/20 group-hover:scale-105 transition-transform duration-200">
+            <GraduationCap className="w-5 h-5 text-emerald-50" />
           </div>
           <span className="flex items-center gap-1.5">
             EduPay Scolarité
@@ -100,83 +101,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             </>
           ) : (
-            <>
-              <button
-                onClick={() => setActiveAdminTab('dashboard')}
-                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  activeAdminTab === 'dashboard'
-                    ? 'text-emerald-700 font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Tableau de Bord
-              </button>
-              <button
-                onClick={() => setActiveAdminTab('guichet')}
-                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  activeAdminTab === 'guichet'
-                    ? 'text-emerald-700 font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Guichet Espèces
-              </button>
-              <button
-                onClick={() => setActiveAdminTab('demandes')}
-                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer relative ${
-                  activeAdminTab === 'demandes'
-                    ? 'text-emerald-700 font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>Demandes d'Admission</span>
-                {pendingAdmissionsCount > 0 && (
-                  <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-full">
-                    {pendingAdmissionsCount}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setActiveAdminTab('eleves')}
-                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  activeAdminTab === 'eleves'
-                    ? 'text-emerald-700 font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Gestion des Élèves
-              </button>
-              <button
-                onClick={() => setActiveAdminTab('tarifs')}
-                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  activeAdminTab === 'tarifs'
-                    ? 'text-emerald-700 font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Tarifs & Scolarités
-              </button>
-              <button
-                onClick={() => setActiveAdminTab('transactions')}
-                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  activeAdminTab === 'transactions'
-                    ? 'text-emerald-700 font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Journal de Caisse
-              </button>
-              <button
-                onClick={() => setActiveAdminTab('api')}
-                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  activeAdminTab === 'api'
-                    ? 'text-emerald-700 font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Clés API
-              </button>
-            </>
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
+              <span>Poste Direction & Secrétariat · Session 2027-2028</span>
+            </div>
           )}
         </nav>
 
@@ -190,7 +118,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               Payer ma scolarité
             </button>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <SyncBanner minimal={true} />
               <button
                 onClick={onLogoutAdmin}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors whitespace-nowrap shrink-0 border border-rose-200 cursor-pointer"

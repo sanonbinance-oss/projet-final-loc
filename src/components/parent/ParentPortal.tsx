@@ -19,7 +19,7 @@ import {
   GraduationCap,
   RotateCw
 } from 'lucide-react';
-import { Payment, PaymentMethod, Student, TuitionTariff } from '../../types';
+import { Payment, PaymentMethod, Student, TuitionTariff, AdmissionRequest } from '../../types';
 import { SchoolStore, DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { PaymentService } from '../../services/paymentService';
 import { AdmissionForm } from './AdmissionForm';
@@ -28,6 +28,7 @@ import { ReenrollmentModal } from './ReenrollmentModal';
 
 interface ParentPortalProps {
   students: Student[];
+  admissions: AdmissionRequest[];
   onPaymentSuccess: (payment: Payment) => void;
   onOpenReceipt: (payment: Payment) => void;
   activeTab: 'paiement' | 'inscription' | 'tarifs' | 'contact';
@@ -36,6 +37,7 @@ interface ParentPortalProps {
 
 export const ParentPortal: React.FC<ParentPortalProps> = ({
   students,
+  admissions,
   onPaymentSuccess,
   onOpenReceipt,
   activeTab,
@@ -90,6 +92,20 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
           s.prenom.toLowerCase().includes(q) ||
           s.matricule.toLowerCase().includes(q) ||
           (s.telephoneParent && s.telephoneParent.includes(q))
+        );
+      });
+
+  // Search pending admissions matching the query
+  const pendingAdmissionsMatch = searchQuery.trim() === ''
+    ? []
+    : (admissions || []).filter((a) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          a.statut === 'en_attente' &&
+          (a.nomEnfant.toLowerCase().includes(q) ||
+           a.prenomEnfant.toLowerCase().includes(q) ||
+           a.id.toLowerCase().includes(q) ||
+           a.telephoneParent.includes(q))
         );
       });
 
@@ -174,14 +190,9 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             <span>Portail Officiel des Familles · Rentrée {CURRENT_SCHOOL_YEAR}</span>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white mb-4 max-w-3xl mx-auto" style={{ textWrap: 'balance' }}>
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white mb-8 max-w-3xl mx-auto" style={{ textWrap: 'balance' }}>
             Réglez la scolarité et réinscrivez vos enfants en ligne en toute sérénité
           </h1>
-
-          <p className="text-sm sm:text-base text-emerald-100/90 max-w-2xl mx-auto mb-8 font-normal leading-relaxed">
-            Paiement interactif et sécurisé par code OTP via 
-            <strong> Orange Money</strong>, <strong>Moov Africa</strong> ou <strong>MTN</strong> avec délivrance immédiate de reçu officiel certifié.
-          </p>
 
           {/* Action Shortcut for parents */}
           <div className="flex flex-wrap items-center justify-center gap-3">
@@ -272,13 +283,14 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                   </div>
 
                   {/* Search dropdown results */}
-                  {searchResults.length > 0 && (
-                    <div className="mt-2 border border-slate-200 rounded-xl max-h-56 overflow-y-auto divide-y divide-slate-100 bg-white shadow-lg">
+                  {(searchResults.length > 0 || pendingAdmissionsMatch.length > 0) && (
+                    <div className="mt-2 border border-slate-200 rounded-xl max-h-72 overflow-y-auto divide-y divide-slate-100 bg-white shadow-xl p-1.5 space-y-1">
+                      {/* Active validated students ready to pay */}
                       {searchResults.map((s) => (
                         <button
                           key={s.id}
                           onClick={() => handleSelectStudent(s)}
-                          className="w-full p-2.5 text-left text-xs hover:bg-emerald-50 transition-colors flex items-center justify-between cursor-pointer"
+                          className="w-full p-2.5 text-left text-xs hover:bg-emerald-50 rounded-lg transition-colors flex items-center justify-between cursor-pointer"
                         >
                           <div>
                             <p className="font-bold text-slate-900">{s.prenom} {s.nom}</p>
@@ -286,8 +298,30 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                               Matricule: {s.matricule} · {s.classe} {s.statutReinscription === 'EN_ATTENTE_REINSCRIPTION' ? '(Attente Réinscription)' : ''}
                             </p>
                           </div>
-                          <span className="text-emerald-700 font-semibold text-[11px]">Choisir</span>
+                          <span className="text-emerald-700 font-semibold text-[11px] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            Sélectionner
+                          </span>
                         </button>
+                      ))}
+
+                      {/* Pending admissions awaiting secretary validation */}
+                      {pendingAdmissionsMatch.map((adm) => (
+                        <div key={adm.id} className="p-3 bg-amber-50/95 border border-amber-300 rounded-lg text-xs space-y-1 text-left">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                              {adm.prenomEnfant} {adm.nomEnfant} ({adm.classeDemandee})
+                            </span>
+                            <span className="text-[10px] font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-mono">
+                              {adm.id}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-amber-900 leading-relaxed">
+                            ⏳ <strong>Dossier d'inscription en cours d'examen par le secrétariat.</strong>
+                            <br />
+                            Votre demande avec bulletin a bien été transmise. Vous pourrez régler la scolarité dès que la secrétaire aura validé votre dossier.
+                          </p>
+                        </div>
                       ))}
                     </div>
                   )}

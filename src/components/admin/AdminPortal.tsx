@@ -8,7 +8,9 @@ import {
   KeyRound,
   ArrowLeft,
   Building,
-  Coins
+  Coins,
+  ShieldCheck,
+  Download
 } from 'lucide-react';
 import { AdmissionRequest, Payment, Student } from '../../types';
 import { DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
@@ -19,13 +21,14 @@ import { AdmissionsTab } from './AdmissionsTab';
 import { TransactionsTab } from './TransactionsTab';
 import { ApiConfigTab } from './ApiConfigTab';
 import { TarifsTab } from './TarifsTab';
+import { AuditTab } from './AuditTab';
 
 interface AdminPortalProps {
   students: Student[];
   payments: Payment[];
   admissions: AdmissionRequest[];
-  activeTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api';
-  setActiveTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'api') => void;
+  activeTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api';
+  setActiveTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api') => void;
   onOpenReceipt: (payment: Payment, scolariteTotale?: number, montantPaye?: number) => void;
   onRefreshData: () => void;
   onSwitchToParent: () => void;
@@ -76,6 +79,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <a
+              href="/edupay-scolarite-v5.zip"
+              download="edupay-scolarite-v5.zip"
+              className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-colors flex items-center gap-1.5 cursor-pointer border border-emerald-200 shadow-sm"
+              title="Télécharger l'archive ZIP complète pour GitHub ou Vercel"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Télécharger le code (.zip)</span>
+            </a>
+
             <button
               onClick={onSwitchToParent}
               className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-200"
@@ -166,6 +179,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('journal')}
+            className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'journal'
+                ? 'bg-indigo-900 text-white shadow-sm ring-1 ring-indigo-400'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Journal d'Audit</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('api')}
             className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'api'
@@ -225,6 +250,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             payments={payments}
             onOpenReceipt={onOpenReceipt}
           />
+        )}
+
+        {activeTab === 'journal' && (
+          <AuditTab onRefresh={onRefreshData} />
         )}
 
         {activeTab === 'api' && <ApiConfigTab />}
