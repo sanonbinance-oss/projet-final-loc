@@ -1,5 +1,7 @@
 export type UserRole = 'parent' | 'admin';
 
+export type ParentTab = 'paiement' | 'inscription' | 'messages' | 'tarifs' | 'contact';
+
 export type PaymentMethod = 
   | 'ORANGE_MONEY' 
   | 'MOOV_MONEY' 
@@ -84,6 +86,7 @@ export interface AdmissionRequest {
   matriculeAttribue?: string;
   notes?: string;
   motifRefus?: string;
+  dateTraitement?: string;
   
   // Paramètres du bulletin du 3ème trimestre et transfert
   estNouveauTransfert: boolean;

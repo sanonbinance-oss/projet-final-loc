@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { UserRole, Student, Payment, AdmissionRequest } from './types';
+import { UserRole, Student, Payment, AdmissionRequest, ParentTab } from './types';
 import { SchoolStore } from './services/store';
 import { Navbar } from './components/Navbar';
 import { ParentPortal } from './components/parent/ParentPortal';
@@ -14,6 +14,7 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { SyncBanner } from './components/SyncBanner';
 import { SyncService } from './services/sync';
+import { getReadMessageIds, buildParentMessages } from './components/parent/ParentMessagesTab';
 import { CheckCircle2, ShieldCheck, Copy, Check } from 'lucide-react';
 
 /**
@@ -55,13 +56,14 @@ export default function App() {
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
 
   // Tab navigation states
-  const [activeParentTab, setActiveParentTab] = useState<'paiement' | 'inscription' | 'tarifs' | 'contact'>('paiement');
+  const [activeParentTab, setActiveParentTab] = useState<ParentTab>('paiement');
   const [activeAdminTab, setActiveAdminTab] = useState<'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api'>('dashboard');
 
   // Store data state
   const [students, setStudents] = useState<Student[]>(() => SchoolStore.getStudents());
   const [payments, setPayments] = useState<Payment[]>(() => SchoolStore.getPayments());
   const [admissions, setAdmissions] = useState<AdmissionRequest[]>(() => SchoolStore.getAdmissions());
+  const [readMessageIds, setReadMessageIds] = useState<string[]>(() => getReadMessageIds());
 
   // Receipt Modal state
   const [receiptPayment, setReceiptPayment] = useState<Payment | null>(null);
@@ -118,15 +120,22 @@ export default function App() {
 
     const handleStorageEvent = () => {
       refreshAllData();
+      setReadMessageIds(getReadMessageIds());
+    };
+
+    const handleReadChange = () => {
+      setReadMessageIds(getReadMessageIds());
     };
 
     window.addEventListener('edupay_storage_change', handleStorageEvent);
     window.addEventListener('storage', handleStorageEvent);
+    window.addEventListener('edupay_messages_read_change', handleReadChange);
 
     return () => {
       unsubscribe();
       window.removeEventListener('edupay_storage_change', handleStorageEvent);
       window.removeEventListener('storage', handleStorageEvent);
+      window.removeEventListener('edupay_messages_read_change', handleReadChange);
     };
   }, [refreshAllData]);
 
@@ -180,6 +189,10 @@ export default function App() {
   }
 
   const currentRole: UserRole = isAdminRoute && adminAuthenticated ? 'admin' : 'parent';
+  const readMessageSet = new Set(readMessageIds);
+  const unreadMessagesCount = buildParentMessages(admissions, payments).filter(
+    (m) => !readMessageSet.has(m.id)
+  ).length;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900 selection:bg-emerald-500 selection:text-white">
@@ -199,6 +212,7 @@ export default function App() {
         activeAdminTab={activeAdminTab}
         setActiveAdminTab={setActiveAdminTab}
         pendingAdmissionsCount={admissions.filter((a) => a.statut === 'en_attente').length}
+        unreadMessagesCount={unreadMessagesCount}
       />
 
       {/* Live Toast Alert */}
@@ -216,6 +230,8 @@ export default function App() {
           <ParentPortal
             students={students}
             admissions={admissions}
+            payments={payments}
+            readMessageIds={readMessageIds}
             onPaymentSuccess={handlePaymentSuccess}
             onOpenReceipt={(payment) => handleOpenReceipt(payment)}
             activeTab={activeParentTab}

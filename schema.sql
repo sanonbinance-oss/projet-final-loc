@@ -46,7 +46,8 @@ CREATE TYPE type_mode_paiement AS ENUM (
 CREATE TYPE type_statut_paiement AS ENUM (
     'SUCCES',
     'EN_COURS',
-    'ECHOUE'
+    'ECHOUE',
+    'EN_ATTENTE_VERIFICATION'
 );
 
 -- Statut de la demande d'admission en ligne

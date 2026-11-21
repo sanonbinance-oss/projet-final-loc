@@ -91,6 +91,7 @@ export const Mappers = {
         : 'en_attente',
       matriculeAttribue: row.matricule_attribue || undefined,
       motifRefus: row.motif_refus || undefined,
+      dateTraitement: row.date_traitement || undefined,
       estNouveauTransfert: row.est_nouvel_eleve ?? true,
       etablissementOrigine: row.etablissement_origine || undefined,
       decisionBulletin: row.decision_bulletin || 'PASSAGE',
@@ -134,6 +135,7 @@ export const Mappers = {
       matricule_attribue: d.matriculeAttribue || null,
       motif_refus: d.motifRefus || null,
       observations_secretaire: d.notes || null,
+      date_traitement: d.dateTraitement || null,
     };
   },
 

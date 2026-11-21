@@ -17,27 +17,34 @@ import {
   HeartHandshake,
   Coins,
   GraduationCap,
-  RotateCw
+  RotateCw,
+  Mail,
+  Bell
 } from 'lucide-react';
-import { Payment, PaymentMethod, Student, TuitionTariff, AdmissionRequest } from '../../types';
+import { Payment, PaymentMethod, Student, TuitionTariff, AdmissionRequest, ParentTab } from '../../types';
 import { SchoolStore, DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { PaymentService } from '../../services/paymentService';
 import { AdmissionForm } from './AdmissionForm';
 import { PaymentOtpModal } from './PaymentOtpModal';
 import { ReenrollmentModal } from './ReenrollmentModal';
+import { ParentMessagesTab, buildParentMessages } from './ParentMessagesTab';
 
 interface ParentPortalProps {
   students: Student[];
   admissions: AdmissionRequest[];
+  payments: Payment[];
+  readMessageIds: string[];
   onPaymentSuccess: (payment: Payment) => void;
   onOpenReceipt: (payment: Payment) => void;
-  activeTab: 'paiement' | 'inscription' | 'tarifs' | 'contact';
-  setActiveTab: (tab: 'paiement' | 'inscription' | 'tarifs' | 'contact') => void;
+  activeTab: ParentTab;
+  setActiveTab: (tab: ParentTab) => void;
 }
 
 export const ParentPortal: React.FC<ParentPortalProps> = ({
   students,
   admissions,
+  payments,
+  readMessageIds,
   onPaymentSuccess,
   onOpenReceipt,
   activeTab,
@@ -202,6 +209,12 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
 
   const isAwaitingReenrollment = selectedStudent?.statutReinscription === 'EN_ATTENTE_REINSCRIPTION';
 
+  const parentMessages = buildParentMessages(admissions, payments);
+  const readSet = new Set(readMessageIds);
+  const unreadMessages = parentMessages.filter((m) => !readSet.has(m.id));
+  const latestUnreadRefusal = unreadMessages.find((m) => m.category === 'ADMISSION_REFUSEE');
+  const latestUnreadMessage = latestUnreadRefusal || unreadMessages[0];
+
   return (
     <div className="min-h-screen pb-16">
       {/* Hero Banner */}
@@ -240,6 +253,22 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
               Demande d'Admission
             </button>
             <button
+              onClick={() => setActiveTab('messages')}
+              className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm inline-flex items-center gap-2 ${
+                activeTab === 'messages'
+                  ? 'bg-white text-slate-900 shadow-lg'
+                  : 'bg-emerald-700/60 hover:bg-emerald-700 text-white border border-emerald-500/30'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Messages</span>
+              {unreadMessages.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold leading-none">
+                  {unreadMessages.length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('tarifs')}
               className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm ${
                 activeTab === 'tarifs'
@@ -255,6 +284,51 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
 
       {/* Main Container */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 -mt-8 relative z-20">
+        {/* Live Notification Banner when Secretary sends a refusal/response message */}
+        {activeTab !== 'messages' && latestUnreadMessage && (
+          <div
+            className={`mb-6 rounded-2xl border-2 p-4 sm:p-5 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+              latestUnreadMessage.category === 'ADMISSION_REFUSEE'
+                ? 'bg-rose-50 border-rose-300 text-rose-950'
+                : 'bg-emerald-50 border-emerald-300 text-emerald-950'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  latestUnreadMessage.category === 'ADMISSION_REFUSEE'
+                    ? 'bg-rose-600 text-white'
+                    : 'bg-emerald-600 text-white'
+                }`}
+              >
+                <Bell className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider block">
+                  Nouveau message du Secrétariat ({unreadMessages.length})
+                </span>
+                <h4 className="font-bold text-sm mt-0.5">{latestUnreadMessage.title}</h4>
+                {latestUnreadMessage.motif && (
+                  <p className="text-xs mt-1 italic">
+                    Motif : « {latestUnreadMessage.motif} »
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab('messages')}
+              className={`px-4 py-2.5 text-xs font-bold rounded-xl text-white transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 shadow-sm ${
+                latestUnreadMessage.category === 'ADMISSION_REFUSEE'
+                  ? 'bg-rose-600 hover:bg-rose-700'
+                  : 'bg-emerald-700 hover:bg-emerald-600'
+              }`}
+            >
+              <Mail className="w-4 h-4" />
+              <span>Ouvrir l'onglet Messages</span>
+            </button>
+          </div>
+        )}
+
         {/* TAB 1: PAIEMENT SCOLARITE */}
         {activeTab === 'paiement' && (
           <div className="space-y-6">
@@ -898,6 +972,22 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             onSuccess={() => {
               // Notification
             }}
+          />
+        )}
+
+        {/* TAB MESSAGES: RÉPONSES & MOTIFS DU SECRÉTARIAT */}
+        {activeTab === 'messages' && (
+          <ParentMessagesTab
+            admissions={admissions}
+            payments={payments}
+            students={students}
+            readMessageIds={readMessageIds}
+            onGoToAdmission={() => setActiveTab('inscription')}
+            onGoToPaymentWithStudent={(student) => {
+              handleSelectStudent(student);
+              setActiveTab('paiement');
+            }}
+            onOpenReceipt={onOpenReceipt}
           />
         )}
 

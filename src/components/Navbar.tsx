@@ -1,6 +1,6 @@
 import React from 'react';
-import { Lock, GraduationCap, ArrowRight, ShieldCheck, LogOut, Coins, FileSpreadsheet } from 'lucide-react';
-import { UserRole } from '../types';
+import { Lock, GraduationCap, ArrowRight, ShieldCheck, LogOut, Coins, FileSpreadsheet, Mail } from 'lucide-react';
+import { UserRole, ParentTab } from '../types';
 import { SyncBanner } from './SyncBanner';
 
 interface NavbarProps {
@@ -9,11 +9,12 @@ interface NavbarProps {
   onOpenAdminLogin: () => void;
   adminAuthenticated: boolean;
   onLogoutAdmin: () => void;
-  activeParentTab: 'paiement' | 'inscription' | 'tarifs' | 'contact';
-  setActiveParentTab: (tab: 'paiement' | 'inscription' | 'tarifs' | 'contact') => void;
+  activeParentTab: ParentTab;
+  setActiveParentTab: (tab: ParentTab) => void;
   activeAdminTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api';
   setActiveAdminTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api') => void;
   pendingAdmissionsCount: number;
+  unreadMessagesCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -27,6 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeAdminTab,
   setActiveAdminTab,
   pendingAdmissionsCount,
+  unreadMessagesCount = 0,
 }) => {
   return (
     <header className="no-print sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200">
@@ -56,7 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
 
         {/* Zone 2: Concise single-line text links */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+        <nav className="hidden md:flex items-center gap-5 text-sm font-medium text-slate-600">
           {currentRole === 'parent' ? (
             <>
               <button
@@ -78,6 +80,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 Demande de Place
+              </button>
+              <button
+                onClick={() => setActiveParentTab('messages')}
+                className={`transition-colors whitespace-nowrap shrink-0 cursor-pointer inline-flex items-center gap-1.5 ${
+                  activeParentTab === 'messages'
+                    ? 'text-emerald-700 font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Messages</span>
+                {unreadMessagesCount > 0 && (
+                  <span className="px-1.5 py-0.5 bg-rose-600 text-white text-[10px] font-bold rounded-full leading-none">
+                    {unreadMessagesCount}
+                  </span>
+                )}
               </button>
               <button
                 onClick={() => setActiveParentTab('tarifs')}

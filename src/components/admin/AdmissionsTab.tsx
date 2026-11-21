@@ -42,6 +42,7 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
   const [motifRefus, setMotifRefus] = useState('');
   const [refusalModalId, setRefusalModalId] = useState<string | null>(null);
   const [acceptedStudent, setAcceptedStudent] = useState<Student | null>(null);
+  const [rejectedFeedback, setRejectedFeedback] = useState<{ childName: string; motif: string } | null>(null);
 
   const filtered = admissions.filter((req) => {
     if (filterStatus !== 'all' && req.statut !== filterStatus) return false;
@@ -71,7 +72,15 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
 
   const handleConfirmRefuse = () => {
     if (!refusalModalId) return;
-    SchoolStore.rejectAdmission(refusalModalId, motifRefus);
+    const req = admissions.find((a) => a.id === refusalModalId);
+    const finalMotif = motifRefus.trim() || 'Bulletin non conforme ou places indisponibles dans cette classe.';
+    SchoolStore.rejectAdmission(refusalModalId, finalMotif);
+    if (req) {
+      setRejectedFeedback({
+        childName: `${req.prenomEnfant} ${req.nomEnfant}`,
+        motif: finalMotif,
+      });
+    }
     setRefusalModalId(null);
     setMotifRefus('');
   };
@@ -173,6 +182,29 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Refusal confirmation feedback */}
+      {rejectedFeedback && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <XCircle className="w-5 h-5 text-rose-700 shrink-0" />
+            <div>
+              <p className="font-bold text-rose-950">
+                Dossier de {rejectedFeedback.childName} refusé — Message envoyé au parent !
+              </p>
+              <p className="text-rose-800">
+                Motif transmis dans l'onglet « Messages » du parent : <span className="italic">« {rejectedFeedback.motif} »</span>
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setRejectedFeedback(null)}
+            className="p-1.5 text-rose-400 hover:text-rose-700 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -312,9 +344,16 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
                           </div>
                         )}
                         {req.statut === 'refuse' && (
-                          <span className="inline-flex items-center gap-1 text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full font-semibold">
-                            <XCircle className="w-3 h-3" /> Refusée
-                          </span>
+                          <div>
+                            <span className="inline-flex items-center gap-1 text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full font-semibold">
+                              <XCircle className="w-3 h-3" /> Refusée
+                            </span>
+                            {req.motifRefus && (
+                              <p className="text-[10px] text-rose-700 italic mt-1 max-w-[160px] line-clamp-2" title={req.motifRefus}>
+                                « {req.motifRefus} »
+                              </p>
+                            )}
+                          </div>
                         )}
                       </td>
 
@@ -383,19 +422,56 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
       {/* Refusal Modal */}
       {refusalModalId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
-            <h3 className="font-bold text-slate-900 text-sm">
-              Motif du Refus de la Demande d'Admission
-            </h3>
-            <p className="text-xs text-slate-600">
-              Veuillez indiquer la raison pour laquelle cette demande ne peut pas être acceptée.
-            </p>
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <XCircle className="w-4 h-4 text-rose-600" />
+                  <span>Refuser la Demande & Notifier le Parent</span>
+                </h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Le motif rédigé ci-dessous sera envoyé directement dans l'onglet <strong>Messages</strong> de l'interface du parent.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setRefusalModalId(null);
+                  setMotifRefus('');
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                'Bulletin non conforme ou illisible',
+                'Plus de place disponible dans cette classe',
+                'Moyenne annuelle insuffisante',
+                'Document incomplet (cachet manquant)',
+              ].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setMotifRefus(preset)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                    motifRefus === preset
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-rose-300'
+                  }`}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+
             <textarea
               rows={3}
               value={motifRefus}
               onChange={(e) => setMotifRefus(e.target.value)}
-              placeholder="Ex: Effectif complet ou moyenne insuffisante..."
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder="Écrivez ici le motif détaillé pour le parent (ex: Bulletin non conforme, plus de place en 6ème...)..."
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-rose-500"
             ></textarea>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
@@ -409,9 +485,9 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
               </button>
               <button
                 onClick={handleConfirmRefuse}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-rose-600 hover:bg-rose-500 text-white cursor-pointer shadow-sm"
               >
-                Confirmer le Refus
+                Refuser & Envoyer le message
               </button>
             </div>
           </div>
@@ -428,7 +504,12 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
           setInspectingAdmission(null);
         }}
         onReject={(adm, motif) => {
-          SchoolStore.rejectAdmission(adm.id, motif);
+          const cleanMotif = motif.trim() || 'Bulletin non conforme ou places indisponibles.';
+          SchoolStore.rejectAdmission(adm.id, cleanMotif);
+          setRejectedFeedback({
+            childName: `${adm.prenomEnfant} ${adm.nomEnfant}`,
+            motif: cleanMotif,
+          });
           setInspectingAdmission(null);
         }}
       />

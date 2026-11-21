@@ -146,7 +146,10 @@ export class SupabaseSyncService {
     observations?: string;
   }) {
     try {
-      const { data, error } = await supabase.from('paiements').insert([payment]).select();
+      const { data, error } = await supabase
+        .from('paiements')
+        .upsert([payment], { onConflict: 'id' })
+        .select();
       if (error) {
         console.warn('[Supabase Sync] Paiement sauvegardé localement, sync Supabase différée:', error.message);
         return false;
@@ -249,6 +252,8 @@ export class SupabaseSyncService {
     statut_admission: string;
     matricule_attribue?: string;
     motif_refus?: string;
+    observations_secretaire?: string;
+    date_traitement?: string;
   }) {
     try {
       const { error } = await supabase.from('demandes_admission').upsert(demande, { onConflict: 'id' });

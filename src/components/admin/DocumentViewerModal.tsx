@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FileText, 
   Check, 
@@ -16,9 +16,17 @@ import {
   CheckCircle2,
   XCircle,
   FileSearch,
-  ExternalLink
+  ExternalLink,
+  Send
 } from 'lucide-react';
-import { AdmissionRequest, Student } from '../../types';
+import { AdmissionRequest } from '../../types';
+
+const QUICK_REJECTION_MOTIFS = [
+  'Bulletin non conforme ou illisible',
+  'Effectif complet : plus de place disponible dans cette classe',
+  'Moyenne annuelle insuffisante pour le niveau demandé',
+  'Document incomplet (cachet ou signature manquante)',
+];
 
 interface DocumentViewerModalProps {
   admission: AdmissionRequest | null;
@@ -37,7 +45,13 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
 }) => {
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [showRejectInput, setShowRejectInput] = useState<boolean>(false);
-  const [rejectionReason, setRejectionReason] = useState<string>('Document non conforme ou illisible');
+  const [rejectionReason, setRejectionReason] = useState<string>('');
+
+  useEffect(() => {
+    setShowRejectInput(false);
+    setRejectionReason('');
+    setZoomLevel(100);
+  }, [admission?.id, isOpen]);
 
   if (!isOpen || !admission) return null;
 
@@ -303,53 +317,115 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
         </div>
 
         {/* Bottom Action Footer */}
-        <div className="p-4 sm:p-5 bg-slate-800 border-t border-slate-700 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>
-              La validation attribue le matricule officiel et débloque le paiement pour la famille.
-            </span>
-          </div>
-
-          {showRejectInput ? (
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <input
-                type="text"
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="Motif de refus (bulletin non conforme, faux, etc.)..."
-                className="px-3 py-2 bg-slate-900 border border-slate-600 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-rose-500 w-full sm:w-80"
-              />
+        <div className="p-4 sm:p-5 bg-slate-800 border-t border-slate-700 space-y-3">
+          {admission.statut === 'refuse' ? (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-rose-500/10 border border-rose-500/30 rounded-xl p-3">
+              <div className="text-xs text-rose-200">
+                <span className="font-bold text-rose-300 block">Dossier déjà refusé — Message envoyé au parent :</span>
+                <span className="italic">« {admission.motifRefus || 'Dossier non retenu.'} »</span>
+              </div>
               <button
-                onClick={() => onReject(admission, rejectionReason)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl whitespace-nowrap shadow-md cursor-pointer"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold cursor-pointer shrink-0"
               >
-                Confirmer le refus
-              </button>
-              <button
-                onClick={() => setShowRejectInput(false)}
-                className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold rounded-xl"
-              >
-                Annuler
+                Fermer
               </button>
             </div>
-          ) : (
-            <div className="flex items-center gap-2 justify-end">
+          ) : admission.statut === 'accepte' ? (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+              <div className="text-xs text-emerald-200">
+                <span className="font-bold text-emerald-300 block">Dossier déjà validé</span>
+                <span>Matricule attribué : <strong className="font-mono">{admission.matriculeAttribue}</strong></span>
+              </div>
               <button
-                onClick={() => setShowRejectInput(true)}
-                className="px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold cursor-pointer shrink-0"
               >
-                <XCircle className="w-4 h-4 text-rose-400" />
-                <span>Refuser le dossier</span>
+                Fermer
               </button>
+            </div>
+          ) : showRejectInput ? (
+            <div className="bg-slate-900/90 border border-rose-500/40 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                    <XCircle className="w-4 h-4 text-rose-400" />
+                    <span>Rédiger le motif du refus (envoyé dans l'onglet Messages du parent)</span>
+                  </h4>
+                </div>
+                <button
+                  onClick={() => setShowRejectInput(false)}
+                  className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                >
+                  Annuler
+                </button>
+              </div>
 
-              <button
-                onClick={() => onAccept(admission)}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold transition-all shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Valider le bulletin & Débloquer le paiement</span>
-              </button>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_REJECTION_MOTIFS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setRejectionReason(preset)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                      rejectionReason === preset
+                        ? 'bg-rose-600 text-white border-rose-500'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-rose-400'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+                <textarea
+                  rows={2}
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Expliquez clairement au parent pourquoi le dossier n'est pas accepté (ex: bulletin non conforme, manque de place en 6ème...)..."
+                  className="flex-1 px-3 py-2 bg-slate-950 border border-slate-600 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+                <button
+                  onClick={() =>
+                    onReject(
+                      admission,
+                      rejectionReason.trim() || 'Bulletin non conforme ou plus de place disponible dans cette classe.'
+                    )
+                  }
+                  className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl whitespace-nowrap shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Refuser & Envoyer le message</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>
+                  La validation attribue le matricule officiel et débloque le paiement pour la famille.
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 justify-end">
+                <button
+                  onClick={() => setShowRejectInput(true)}
+                  className="px-4 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <XCircle className="w-4 h-4 text-rose-400" />
+                  <span>Refuser</span>
+                </button>
+
+                <button
+                  onClick={() => onAccept(admission)}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold transition-all shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Valider le bulletin & Débloquer le paiement</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

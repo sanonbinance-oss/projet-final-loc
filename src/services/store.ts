@@ -994,6 +994,7 @@ export class SchoolStore {
 
     req.statut = 'accepte';
     req.matriculeAttribue = student.matricule;
+    req.dateTraitement = new Date().toISOString();
     this.saveAdmissions(admissions);
 
     SupabaseSyncService.syncDemandeAdmissionToSupabase({
@@ -1007,6 +1008,7 @@ export class SchoolStore {
       description_motif: req.descriptionVenue || '',
       statut_admission: 'ACCEPTE',
       matricule_attribue: student.matricule,
+      date_traitement: req.dateTraitement,
     });
 
     this.addAuditLog({
@@ -1024,8 +1026,13 @@ export class SchoolStore {
     const admissions = this.getAdmissions();
     const req = admissions.find((a) => a.id === requestId);
     if (req) {
+      const cleanMotif =
+        motif && motif.trim().length > 0
+          ? motif.trim()
+          : 'Bulletin non conforme ou places indisponibles dans cette classe.';
       req.statut = 'refuse';
-      req.motifRefus = motif || 'Places indisponibles ou dossier non retenu.';
+      req.motifRefus = cleanMotif;
+      req.dateTraitement = new Date().toISOString();
       this.saveAdmissions(admissions);
 
       SupabaseSyncService.syncDemandeAdmissionToSupabase({
@@ -1039,12 +1046,13 @@ export class SchoolStore {
         description_motif: req.descriptionVenue || '',
         statut_admission: 'REFUSE',
         motif_refus: req.motifRefus,
+        date_traitement: req.dateTraitement,
       });
 
       this.addAuditLog({
         typeAction: 'REFUS_ADMISSION',
         auteur: 'Secrétaire Principale',
-        description: `Refus de la demande d'admission pour ${req.prenomEnfant} ${req.nomEnfant} (${req.classeDemandee}). Motif : ${req.motifRefus}`,
+        description: `Refus de la demande d'admission pour ${req.prenomEnfant} ${req.nomEnfant} (${req.classeDemandee}). Motif envoyé au parent : ${req.motifRefus}`,
         details: { requestId: req.id, motif: req.motifRefus },
         niveauGravite: 'AVERTISSEMENT',
       });
