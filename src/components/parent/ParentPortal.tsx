@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Payment, PaymentMethod, Student, TuitionTariff, AdmissionRequest, ParentTab } from '../../types';
 import { SchoolStore, DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
+import { SyncService } from '../../services/sync';
 import { PaymentService } from '../../services/paymentService';
 import { AdmissionForm } from './AdmissionForm';
 import { PaymentOtpModal } from './PaymentOtpModal';
@@ -76,11 +77,21 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const [pendingVerificationPayment, setPendingVerificationPayment] = useState<Payment | null>(null);
   const [rejectionMessage, setRejectionMessage] = useState<string | null>(null);
 
-  // Auto-unlock receipt as soon as secretary validates in real time
+  // Restaure un paiement Mobile Money en attente après rechargement mobile et débloque dès validation secrétaire
   useEffect(() => {
-    if (!pendingVerificationPayment) return;
-    const unsubscribe = SchoolStore.subscribe(() => {
-      const allPayments = SchoolStore.getPayments();
+    if (!pendingVerificationPayment) {
+      if (selectedStudent) {
+        const existingPending = payments.find(
+          (p) => p.studentId === selectedStudent.id && p.statut === 'EN_ATTENTE_VERIFICATION'
+        );
+        if (existingPending && existingPending.id !== lastCompletedPayment?.id) {
+          setPendingVerificationPayment(existingPending);
+        }
+      }
+      return;
+    }
+
+    const checkMatch = (allPayments: Payment[]) => {
       const match = allPayments.find((p) => p.id === pendingVerificationPayment.id);
       if (match) {
         if (match.statut === 'SUCCES') {
@@ -90,12 +101,17 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
           onPaymentSuccess(match);
         } else if (match.statut === 'ECHOUE') {
           setPendingVerificationPayment(null);
-          setRejectionMessage(match.motifRejetPaiement || 'Fonds non reçus sur le terminal de l\'école');
+          setRejectionMessage(match.motifRejetPaiement || "Fonds non reçus sur le terminal de l'école");
         }
       }
+    };
+
+    checkMatch(payments);
+    const unsubscribe = SchoolStore.subscribe(() => {
+      checkMatch(SchoolStore.getPayments());
     });
     return () => unsubscribe();
-  }, [pendingVerificationPayment, onPaymentSuccess]);
+  }, [pendingVerificationPayment, payments, selectedStudent, lastCompletedPayment, onPaymentSuccess]);
 
   // Sync selectedStudent when students prop updates
   useEffect(() => {
@@ -192,9 +208,10 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
         : `Règlement scolarité ${selectedStudent.classe} [Code OTP: ${otpCode}]`,
     });
 
-    // Save pending payment awaiting secretary cash verification
-    SchoolStore.addPayment(paymentResult);
+    // Save pending payment awaiting secretary cash verification and push to Supabase
+    await SchoolStore.addPaymentAsync(paymentResult);
     setPendingVerificationPayment(paymentResult);
+    void SyncService.synchroniserMaintenant();
 
     // Refresh selected student state
     const updatedStudent = SchoolStore.getStudents().find((s) => s.id === selectedStudent.id);
@@ -386,6 +403,16 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto shrink-0">
                   <button
+                    type="button"
+                    onClick={() => void SyncService.synchroniserMaintenant()}
+                    className="w-full sm:w-auto px-3.5 py-2.5 text-xs font-bold rounded-xl bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                    title="Vérifier maintenant si la secrétaire a validé le paiement"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span>Actualiser</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       SchoolStore.validateMobileMoneyPayment(pendingVerificationPayment.id, 'Secrétaire Démo');
                     }}

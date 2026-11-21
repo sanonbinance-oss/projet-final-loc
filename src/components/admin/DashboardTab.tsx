@@ -29,12 +29,13 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   onOpenReceipt,
   onNavigateToTab,
 }) => {
-  // Calculations
-  const totalEncaisse = payments.reduce((acc, p) => acc + p.montant, 0);
+  // Calculations (only count confirmed SUCCES payments in treasury totals)
+  const verifiedPayments = payments.filter((p) => p.statut === 'SUCCES');
+  const totalEncaisse = verifiedPayments.reduce((acc, p) => acc + p.montant, 0);
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
-  const encaisseAujourdhui = payments
+  const encaisseAujourdhui = verifiedPayments
     .filter((p) => new Date(p.date) >= startOfToday)
     .reduce((acc, p) => acc + p.montant, 0);
 
@@ -46,12 +47,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   const pendingAdmissions = admissions.filter((a) => a.statut === 'en_attente');
 
-  // Channel breakdown
+  // Channel breakdown (confirmed SUCCES payments)
   const parOperateur = {
-    ORANGE_MONEY: payments.filter((p) => p.mode === 'ORANGE_MONEY').reduce((a, b) => a + b.montant, 0),
-    MOOV_MONEY: payments.filter((p) => p.mode === 'MOOV_MONEY').reduce((a, b) => a + b.montant, 0),
-    MTN_MONEY: payments.filter((p) => p.mode === 'MTN_MONEY').reduce((a, b) => a + b.montant, 0),
-    ESPECES_GUICHET: payments.filter((p) => p.mode === 'ESPECES_GUICHET').reduce((a, b) => a + b.montant, 0),
+    ORANGE_MONEY: verifiedPayments.filter((p) => p.mode === 'ORANGE_MONEY').reduce((a, b) => a + b.montant, 0),
+    MOOV_MONEY: verifiedPayments.filter((p) => p.mode === 'MOOV_MONEY').reduce((a, b) => a + b.montant, 0),
+    MTN_MONEY: verifiedPayments.filter((p) => p.mode === 'MTN_MONEY').reduce((a, b) => a + b.montant, 0),
+    ESPECES_GUICHET: verifiedPayments.filter((p) => p.mode === 'ESPECES_GUICHET').reduce((a, b) => a + b.montant, 0),
   };
 
   const totalMobileMoney = parOperateur.ORANGE_MONEY + parOperateur.MOOV_MONEY + parOperateur.MTN_MONEY;
@@ -299,7 +300,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </div>
 
           <div className="divide-y divide-slate-100">
-            {payments.slice(0, 6).map((p) => {
+            {verifiedPayments.slice(0, 6).map((p) => {
               const dateStr = new Date(p.date).toLocaleDateString('fr-FR', {
                 day: '2-digit',
                 month: 'short',

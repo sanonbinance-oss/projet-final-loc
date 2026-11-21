@@ -13,6 +13,7 @@ export interface SyncState {
   nbDemandes: number;
   nbEleves: number;
   nbPaiements: number;
+  nbEnAttenteEnvoi?: number;
 }
 
 type SyncListener = (state: SyncState) => void;
@@ -28,14 +29,42 @@ let currentState: SyncState = {
   nbDemandes: 0,
   nbEleves: 0,
   nbPaiements: 0,
+  nbEnAttenteEnvoi: 0,
 };
 
 function notifierSync() {
   syncListeners.forEach((fn) => fn({ ...currentState }));
 }
 
-let pollingInterval: any = null;
-let realtimeChannel: any = null;
+let pollingInterval: ReturnType<typeof setInterval> | null = null;
+let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+let syncInFlight: Promise<void> | null = null;
+let lastTriggerTime = 0;
+let eventListenersBound = false;
+
+function formatSupabaseError(code?: string, error?: string): string {
+  const msg = error || 'Impossible de joindre la base Supabase.';
+  if (
+    code === 'PGRST205' ||
+    msg.includes('Could not find the table') ||
+    msg.includes('schema cache') ||
+    msg.includes('does not exist')
+  ) {
+    return "Tables Supabase introuvables : veuillez exécuter le script schema.sql dans l'Éditeur SQL de Supabase.";
+  }
+  if (code === '42501' || msg.toLowerCase().includes('row-level security') || msg.toLowerCase().includes('permission denied')) {
+    return `Accès refusé par Supabase (RLS) : ${msg}`;
+  }
+  return msg;
+}
+
+const handleWakeupSync = () => {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  const now = Date.now();
+  if (now - lastTriggerTime < 1500) return;
+  lastTriggerTime = now;
+  void SyncService.synchroniserTout(true);
+};
 
 export class SyncService {
   static getStatus(): SyncState {
@@ -60,9 +89,10 @@ export class SyncService {
 
   /**
    * Lance la synchronisation bidirectionnelle complète :
-   * 1. Charge les données depuis Supabase
-   * 2. Écoute en temps réel via Supabase Realtime (WebSocket)
-   * 3. Maintient un polling de secours toutes les 6 secondes
+   * 1. Vide la file d'attente locale (outbox) vers Supabase
+   * 2. Charge les données à jour depuis Supabase
+   * 3. Écoute en temps réel via Supabase Realtime (WebSocket)
+   * 4. Maintient un polling de secours toutes les 5 secondes + reprise d'onglet/réseau
    */
   static async initialiser() {
     if (typeof window === 'undefined') return;
@@ -70,132 +100,185 @@ export class SyncService {
     currentState.estEnCours = true;
     notifierSync();
 
-    // 1. Premier chargement complet
     await this.synchroniserTout();
-
-    // 2. Écoute Supabase Realtime
     this.activerRealtime();
 
-    // 3. Polling de secours toutes les 6 secondes
     if (!pollingInterval) {
       pollingInterval = setInterval(() => {
-        this.synchroniserTout(true);
-      }, 6000);
+        void this.synchroniserTout(true);
+      }, 5000);
+    }
+
+    if (!eventListenersBound) {
+      eventListenersBound = true;
+      window.addEventListener('focus', handleWakeupSync);
+      window.addEventListener('online', handleWakeupSync);
+      document.addEventListener('visibilitychange', handleWakeupSync);
     }
   }
 
   /**
-   * Télécharge les données depuis Supabase et met à jour le Store local
+   * Envoie d'abord les éléments en attente (outbox), puis télécharge les données depuis Supabase
    */
-  static async synchroniserTout(estSilencieux: boolean = false) {
-    if (!estSilencieux) {
-      currentState.estEnCours = true;
-      notifierSync();
+  static async synchroniserTout(estSilencieux: boolean = false): Promise<void> {
+    if (syncInFlight) {
+      return syncInFlight;
     }
 
-    try {
-      const [demandesRaw, elevesRaw, paiementsRaw, tarifsRaw, auditRaw] = await Promise.all([
-        SupabaseSyncService.fetchDemandesAdmissionFromSupabase(),
-        SupabaseSyncService.fetchElevesFromSupabase(),
-        SupabaseSyncService.fetchPaiementsFromSupabase(),
-        SupabaseSyncService.fetchTarifsFromSupabase(CURRENT_SCHOOL_YEAR),
-        SupabaseSyncService.fetchAuditLogsFromSupabase(),
-      ]);
+    const runner = (async () => {
+      if (!estSilencieux) {
+        currentState.estEnCours = true;
+        notifierSync();
+      }
 
-      let aMisAJour = false;
+      try {
+        // 0. Tenter d'abord d'envoyer tout ce qui est en attente dans l'outbox locale
+        const outboxResult = await SchoolStore.flushOutbox();
+        currentState.nbEnAttenteEnvoi = outboxResult.remaining;
 
-      // 1. Demandes d'admission
-      if (demandesRaw && Array.isArray(demandesRaw)) {
-        const cloudDemandes: AdmissionRequest[] = demandesRaw.map(Mappers.demandeFromSupabase);
-        const locales = SchoolStore.getAdmissions();
-        
-        // Fusionner en conservant les aperçus locaux si non présents côté cloud
-        const map = new Map<string, AdmissionRequest>();
-        locales.forEach((d) => map.set(d.id, d));
-        cloudDemandes.forEach((d) => {
-          const existing = map.get(d.id);
-          map.set(d.id, {
-            ...d,
-            bulletinUrl: d.bulletinUrl || existing?.bulletinUrl,
+        const [demandesRes, elevesRes, paiementsRes, tarifsRes, auditRaw] = await Promise.all([
+          SupabaseSyncService.fetchDemandesAdmissionWithStatus(),
+          SupabaseSyncService.fetchElevesWithStatus(),
+          SupabaseSyncService.fetchPaiementsWithStatus(),
+          SupabaseSyncService.fetchTarifsFromSupabaseWithStatus(CURRENT_SCHOOL_YEAR),
+          SupabaseSyncService.fetchAuditLogsFromSupabase(),
+        ]);
+
+        const outbox = SchoolStore.getOutbox();
+        const pendingDemandeIds = new Set(outbox.filter((o) => o.kind === 'DEMANDE').map((o) => o.recordId));
+        const pendingEleveIds = new Set(outbox.filter((o) => o.kind === 'ELEVE').map((o) => o.recordId));
+        const pendingPaiementIds = new Set(outbox.filter((o) => o.kind === 'PAIEMENT').map((o) => o.recordId));
+
+        // 1. Demandes d'admission
+        if (demandesRes.data && Array.isArray(demandesRes.data)) {
+          const cloudDemandes: AdmissionRequest[] = demandesRes.data.map(Mappers.demandeFromSupabase);
+          const locales = SchoolStore.getAdmissions();
+
+          const map = new Map<string, AdmissionRequest>();
+          locales.forEach((d) => map.set(d.id, d));
+          cloudDemandes.forEach((d) => {
+            const existing = map.get(d.id);
+            if (existing && pendingDemandeIds.has(d.id)) {
+              // Conserver la version locale tant que sa modification est encore en file d'envoi
+              return;
+            }
+            map.set(d.id, {
+              ...d,
+              bulletinUrl: d.bulletinUrl || existing?.bulletinUrl,
+            });
           });
-        });
-        
-        const fusion = Array.from(map.values()).sort(
-          (a, b) => new Date(b.dateDemande).getTime() - new Date(a.dateDemande).getTime()
-        );
-        
-        SchoolStore.saveAdmissions(fusion);
-        currentState.nbDemandes = fusion.length;
-        aMisAJour = true;
-      }
 
-      // 2. Élèves
-      if (elevesRaw && Array.isArray(elevesRaw)) {
-        const cloudEleves: Student[] = elevesRaw.map(Mappers.eleveFromSupabase);
-        const locales = SchoolStore.getStudents();
-        
-        const map = new Map<string, Student>();
-        locales.forEach((s) => map.set(s.id, s));
-        cloudEleves.forEach((s) => map.set(s.id, s));
-        
-        const fusion = Array.from(map.values());
-        SchoolStore.saveStudents(fusion);
-        currentState.nbEleves = fusion.length;
-        aMisAJour = true;
-      }
+          const fusion = Array.from(map.values()).sort(
+            (a, b) => new Date(b.dateDemande).getTime() - new Date(a.dateDemande).getTime()
+          );
 
-      // 3. Paiements
-      if (paiementsRaw && Array.isArray(paiementsRaw)) {
-        const cloudPaiements: Payment[] = paiementsRaw.map(Mappers.paiementFromSupabase);
-        const locales = SchoolStore.getPayments();
-        
-        const map = new Map<string, Payment>();
-        locales.forEach((p) => map.set(p.id, p));
-        cloudPaiements.forEach((p) => map.set(p.id, p));
-        
-        const fusion = Array.from(map.values()).sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
-        
-        SchoolStore.savePayments(fusion);
-        currentState.nbPaiements = fusion.length;
-        aMisAJour = true;
-      }
+          SchoolStore.saveAdmissions(fusion);
+          currentState.nbDemandes = fusion.length;
+        }
 
-      // 4. Tarifs
-      if (tarifsRaw && Array.isArray(tarifsRaw) && tarifsRaw.length > 0) {
-        const cloudTarifs: TuitionTariff[] = tarifsRaw.map(Mappers.tarifFromSupabase);
-        SchoolStore.saveTarifs(cloudTarifs);
-      }
+        // 2. Élèves
+        if (elevesRes.data && Array.isArray(elevesRes.data)) {
+          const cloudEleves: Student[] = elevesRes.data.map(Mappers.eleveFromSupabase);
+          const locales = SchoolStore.getStudents();
 
-      // 5. Journal d'audit
-      if (auditRaw && Array.isArray(auditRaw)) {
-        const cloudLogs: AuditLog[] = auditRaw.map(Mappers.auditLogFromSupabase);
-        const locales = SchoolStore.getAuditLogs();
-        const map = new Map<string, AuditLog>();
-        locales.forEach((l) => map.set(l.id, l));
-        cloudLogs.forEach((l) => map.set(l.id, l));
-        const fusion = Array.from(map.values()).sort(
-          (a, b) => new Date(b.dateAction).getTime() - new Date(a.dateAction).getTime()
-        );
-        SchoolStore.saveAuditLogs(fusion);
-      }
+          const map = new Map<string, Student>();
+          locales.forEach((s) => map.set(s.id, s));
+          cloudEleves.forEach((s) => {
+            const existing = map.get(s.id);
+            if (existing && pendingEleveIds.has(s.id)) {
+              return;
+            }
+            map.set(s.id, s);
+          });
 
-      currentState.estConnecte = true;
-      currentState.estEnCours = false;
-      currentState.statut = 'connecte';
-      currentState.messageErreur = null;
-      currentState.derniereSynchro = new Date().toLocaleTimeString('fr-FR');
-      currentState.message = 'Connecté à Supabase · Synchronisation en direct active';
-      notifierSync();
-    } catch (err) {
-      console.warn('[SyncService] Synchronisation partielle :', err);
-      currentState.estEnCours = false;
-      currentState.statut = 'erreur';
-      currentState.messageErreur = err instanceof Error ? err.message : 'Erreur de connexion';
-      currentState.message = 'Synchronisation locale (Supabase temporairement inaccessible)';
-      notifierSync();
-    }
+          const fusion = Array.from(map.values());
+          SchoolStore.saveStudents(fusion);
+          currentState.nbEleves = fusion.length;
+        }
+
+        // 3. Paiements
+        if (paiementsRes.data && Array.isArray(paiementsRes.data)) {
+          const cloudPaiements: Payment[] = paiementsRes.data.map(Mappers.paiementFromSupabase);
+          const locales = SchoolStore.getPayments();
+
+          const map = new Map<string, Payment>();
+          locales.forEach((p) => map.set(p.id, p));
+          cloudPaiements.forEach((p) => {
+            const existing = map.get(p.id);
+            if (existing && pendingPaiementIds.has(p.id)) {
+              return;
+            }
+            map.set(p.id, p);
+          });
+
+          const fusion = Array.from(map.values()).sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+
+          SchoolStore.savePayments(fusion);
+          currentState.nbPaiements = fusion.length;
+        }
+
+        // 4. Tarifs
+        if (tarifsRes.data && Array.isArray(tarifsRes.data) && tarifsRes.data.length > 0) {
+          const cloudTarifs: TuitionTariff[] = tarifsRes.data.map(Mappers.tarifFromSupabase);
+          SchoolStore.saveTarifs(cloudTarifs);
+        }
+
+        // 5. Journal d'audit
+        if (auditRaw && Array.isArray(auditRaw)) {
+          const cloudLogs: AuditLog[] = auditRaw.map(Mappers.auditLogFromSupabase);
+          const locales = SchoolStore.getAuditLogs();
+          const map = new Map<string, AuditLog>();
+          locales.forEach((l) => map.set(l.id, l));
+          cloudLogs.forEach((l) => map.set(l.id, l));
+          const fusion = Array.from(map.values()).sort(
+            (a, b) => new Date(b.dateAction).getTime() - new Date(a.dateAction).getTime()
+          );
+          SchoolStore.saveAuditLogs(fusion);
+        }
+
+        // Vérification réelle de la santé des tables principales
+        const firstCoreError =
+          (demandesRes.error ? { code: demandesRes.code, error: demandesRes.error } : null) ||
+          (elevesRes.error ? { code: elevesRes.code, error: elevesRes.error } : null) ||
+          (paiementsRes.error ? { code: paiementsRes.code, error: paiementsRes.error } : null);
+
+        if (firstCoreError) {
+          currentState.estConnecte = false;
+          currentState.estEnCours = false;
+          currentState.statut = 'erreur';
+          currentState.messageErreur = formatSupabaseError(firstCoreError.code, firstCoreError.error);
+          currentState.message = 'Synchronisation Supabase interrompue';
+          notifierSync();
+          return;
+        }
+
+        currentState.estConnecte = true;
+        currentState.estEnCours = false;
+        currentState.statut = 'connecte';
+        currentState.messageErreur = null;
+        currentState.derniereSynchro = new Date().toLocaleTimeString('fr-FR');
+        currentState.message =
+          outboxResult.remaining > 0
+            ? `Connecté à Supabase (${outboxResult.remaining} élément(s) en attente d'envoi)`
+            : 'Connecté à Supabase · Synchronisation en direct active';
+        notifierSync();
+      } catch (err) {
+        console.warn('[SyncService] Synchronisation partielle :', err);
+        currentState.estConnecte = false;
+        currentState.estEnCours = false;
+        currentState.statut = 'erreur';
+        currentState.messageErreur = err instanceof Error ? err.message : 'Erreur de connexion Supabase';
+        currentState.message = 'Synchronisation locale (Supabase temporairement inaccessible)';
+        notifierSync();
+      } finally {
+        syncInFlight = null;
+      }
+    })();
+
+    syncInFlight = runner;
+    return runner;
   }
 
   /**
@@ -210,48 +293,41 @@ export class SyncService {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'demandes_admission' },
-          (payload) => {
-            console.log('[Realtime] Changement détecté sur demandes_admission:', payload);
-            this.synchroniserTout(true);
+          () => {
+            void this.synchroniserTout(true);
           }
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'eleves' },
-          (payload) => {
-            console.log('[Realtime] Changement détecté sur eleves:', payload);
-            this.synchroniserTout(true);
+          () => {
+            void this.synchroniserTout(true);
           }
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'paiements' },
-          (payload) => {
-            console.log('[Realtime] Changement détecté sur paiements:', payload);
-            this.synchroniserTout(true);
+          () => {
+            void this.synchroniserTout(true);
           }
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'tarifs_scolarite' },
-          (payload) => {
-            console.log('[Realtime] Changement détecté sur tarifs_scolarite:', payload);
-            this.synchroniserTout(true);
+          () => {
+            void this.synchroniserTout(true);
           }
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'journal_activites' },
-          (payload) => {
-            console.log('[Realtime] Nouveau log dans journal_activites:', payload);
-            this.synchroniserTout(true);
+          () => {
+            void this.synchroniserTout(true);
           }
         )
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
-            currentState.estConnecte = true;
-            currentState.message = 'Supabase Realtime connecté en direct';
-            notifierSync();
+            void this.synchroniserTout(true);
           }
         });
     } catch (err) {
@@ -268,8 +344,15 @@ export class SyncService {
       pollingInterval = null;
     }
     if (realtimeChannel) {
-      supabase.removeChannel(realtimeChannel);
+      void supabase.removeChannel(realtimeChannel);
       realtimeChannel = null;
+    }
+    if (eventListenersBound && typeof window !== 'undefined') {
+      eventListenersBound = false;
+      window.removeEventListener('focus', handleWakeupSync);
+      window.removeEventListener('online', handleWakeupSync);
+      document.removeEventListener('visibilitychange', handleWakeupSync);
     }
   }
 }
+

@@ -72,18 +72,20 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({ minimal = false }) => {
 
   if (syncState.statut === 'erreur') {
     return (
-      <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5 text-xs text-rose-800 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          <p>
+      <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5 text-xs text-rose-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+        <div className="flex items-start sm:items-center gap-2 min-w-0">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
+          <p className="break-words">
             <span className="font-semibold">Liaison Supabase en pause :</span>{' '}
-            {syncState.messageErreur || 'Impossible de joindre la base de données.'} Les données restent enregistrées localement.
+            {syncState.messageErreur || 'Impossible de joindre la base de données.'}{' '}
+            {syncState.nbEnAttenteEnvoi ? `(${syncState.nbEnAttenteEnvoi} envoi(s) en attente) ` : ''}
+            Les données restent enregistrées localement.
           </p>
         </div>
         <button
           onClick={handleForceSync}
           disabled={isForcing}
-          className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded font-medium shrink-0 disabled:opacity-50"
+          className="w-full sm:w-auto px-3 py-1.5 sm:py-1 bg-rose-600 hover:bg-rose-700 text-white rounded font-medium shrink-0 disabled:opacity-50 cursor-pointer text-center"
         >
           {isForcing ? 'Connexion...' : 'Réessayer'}
         </button>
@@ -92,30 +94,31 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({ minimal = false }) => {
   }
 
   return (
-    <div className="bg-slate-900 border-b border-slate-800 text-slate-300 px-4 py-2 text-xs flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        <Wifi className="w-3.5 h-3.5 text-emerald-400" />
-        <span>
-          <strong className="text-white">Liaison Temps Réel Active :</strong> Synchronisé avec Supabase Cloud. Les demandes parents apparaissent instantanément côté secrétaire.
+    <div className="bg-slate-900 border-b border-slate-800 text-slate-300 px-4 py-2 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+        <Wifi className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+        <span className="truncate sm:whitespace-normal">
+          <strong className="text-white">Liaison Temps Réel Active :</strong> Synchronisé avec Supabase Cloud.
+          {syncState.nbEnAttenteEnvoi ? ` (${syncState.nbEnAttenteEnvoi} élément(s) en file d'envoi)` : ' Les demandes parents apparaissent instantanément côté secrétaire.'}
         </span>
-        <span className="text-slate-400 hidden sm:inline">
+        <span className="text-slate-400 hidden md:inline shrink-0">
           (Dernière màj : {formatLastSync(syncState.derniereSynchro)})
         </span>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-end gap-2 shrink-0">
         <button
           onClick={handleForceSync}
           disabled={isForcing}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-semibold border border-slate-700 transition-colors"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
         >
           <RefreshCw className={`w-3 h-3 ${isForcing ? 'animate-spin text-emerald-400' : ''}`} />
           <span>Synchroniser</span>
         </button>
         <button
           onClick={() => setDismissed(true)}
-          className="text-slate-400 hover:text-slate-200 text-xs px-1"
+          className="text-slate-400 hover:text-slate-200 text-xs px-1 cursor-pointer"
           title="Masquer le bandeau"
         >
           ✕

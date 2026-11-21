@@ -1,4 +1,4 @@
-import { Student, AdmissionRequest, Payment, TuitionTariff, AuditLog } from '../types';
+import { Student, AdmissionRequest, Payment, TuitionTariff, AuditLog, PaymentStatus } from '../types';
 
 /**
  * Mappers bidirectionnels entre le schéma Supabase (snake_case)
@@ -11,10 +11,10 @@ export const Mappers = {
     return {
       id: row.id,
       matricule: row.matricule,
-      nom: row.nom,
-      prenom: row.prenom,
+      nom: row.nom || '',
+      prenom: row.prenom || '',
       dateNaissance: row.date_naissance || '',
-      classe: row.classe,
+      classe: row.classe || '',
       anneeScolaire: row.annee_scolaire || '2027-2028',
       scolariteTotale: Number(row.scolarite_totale) || 0,
       montantPaye: Number(row.montant_paye) || 0,
@@ -26,7 +26,10 @@ export const Mappers = {
       statut: row.statut_inscription === 'radie' ? 'radie' : 'inscrit',
       etablissementOrigine: row.etablissement_origine || undefined,
       decisionBulletin: row.decision_bulletin || undefined,
-      moyenneAnnuelle: row.moyenne_annuelle !== null ? Number(row.moyenne_annuelle) : undefined,
+      moyenneAnnuelle:
+        row.moyenne_annuelle !== null && row.moyenne_annuelle !== undefined
+          ? Number(row.moyenne_annuelle)
+          : undefined,
       motifVenue: row.motif_venue || undefined,
       descriptionVenue: row.description_motif || undefined,
       bulletinNomFichier: row.bulletin_nom_fichier || undefined,
@@ -81,26 +84,30 @@ export const Mappers = {
       id: row.id,
       dateDemande: row.date_demande || new Date().toISOString(),
       anneeScolaire: row.annee_scolaire || '2027-2028',
-      nomEnfant: row.nom_enfant,
-      prenomEnfant: row.prenom_enfant,
+      nomEnfant: row.nom_enfant || '',
+      prenomEnfant: row.prenom_enfant || '',
       dateNaissance: row.date_naissance || '',
-      classeDemandee: row.classe_demandee,
-      nomParent: row.nom_parent,
-      telephoneParent: row.telephone_parent,
+      classeDemandee: row.classe_demandee || '',
+      nomParent: row.nom_parent || '',
+      telephoneParent: row.telephone_parent || '',
       emailParent: row.email_parent || undefined,
       adresse: row.adresse_domicile || '',
-      statut: row.statut_admission === 'ACCEPTE' 
-        ? 'accepte' 
-        : row.statut_admission === 'REFUSE' 
-        ? 'refuse' 
-        : 'en_attente',
+      statut:
+        row.statut_admission === 'ACCEPTE'
+          ? 'accepte'
+          : row.statut_admission === 'REFUSE'
+          ? 'refuse'
+          : 'en_attente',
       matriculeAttribue: row.matricule_attribue || undefined,
       motifRefus: row.motif_refus || undefined,
       dateTraitement: row.date_traitement || undefined,
       estNouveauTransfert: row.est_nouvel_eleve ?? true,
       etablissementOrigine: row.etablissement_origine || undefined,
       decisionBulletin: row.decision_bulletin || 'PASSAGE',
-      moyenneAnnuelle: row.moyenne_annuelle !== null ? Number(row.moyenne_annuelle) : undefined,
+      moyenneAnnuelle:
+        row.moyenne_annuelle !== null && row.moyenne_annuelle !== undefined
+          ? Number(row.moyenne_annuelle)
+          : undefined,
       motifVenue: row.motif_venue || 'DEMENAGEMENT',
       descriptionVenue: row.description_motif || '',
       bulletinNomFichier: row.bulletin_nom_fichier || undefined,
@@ -111,11 +118,12 @@ export const Mappers = {
   },
 
   demandeToSupabase(d: AdmissionRequest): Record<string, unknown> {
-    const statutUpper = d.statut === 'accepte' 
-      ? 'ACCEPTE' 
-      : d.statut === 'refuse' 
-      ? 'REFUSE' 
-      : 'EN_ATTENTE';
+    const statutUpper =
+      d.statut === 'accepte'
+        ? 'ACCEPTE'
+        : d.statut === 'refuse'
+        ? 'REFUSE'
+        : 'EN_ATTENTE';
 
     return {
       id: d.id,
@@ -134,7 +142,7 @@ export const Mappers = {
       decision_bulletin: d.decisionBulletin || 'PASSAGE',
       moyenne_annuelle: d.moyenneAnnuelle !== undefined ? d.moyenneAnnuelle : null,
       motif_venue: d.motifVenue || 'DEMENAGEMENT',
-      description_motif: d.descriptionVenue || '',
+      description_motif: d.descriptionVenue || "Demande d'inscription en ligne",
       bulletin_nom_fichier: d.bulletinNomFichier || null,
       montant_don: d.montantDon || 0,
       statut_admission: statutUpper,
@@ -147,6 +155,20 @@ export const Mappers = {
 
   // --- PAIEMENTS ---
   paiementFromSupabase(row: any): Payment {
+    const rawObs: string = row.observations || '';
+    const hasPendingMarker = rawObs.includes('[EN_ATTENTE_VERIFICATION]');
+    let mappedStatut: PaymentStatus = (row.statut_paiement as PaymentStatus) || 'SUCCES';
+    if (mappedStatut === 'EN_COURS' && hasPendingMarker) {
+      mappedStatut = 'EN_ATTENTE_VERIFICATION';
+    }
+
+    const cleanedObs = rawObs.replace(/\[EN_ATTENTE_VERIFICATION\]\s*/g, '').trim();
+    let motifRejet: string | undefined;
+    if (mappedStatut === 'ECHOUE' && cleanedObs) {
+      const m = cleanedObs.match(/Motif\s*:\s*(.+)$/i);
+      motifRejet = m ? m[1].trim() : cleanedObs;
+    }
+
     return {
       id: row.id,
       reference: row.reference_quittance,
@@ -160,12 +182,14 @@ export const Mappers = {
       montantDon: Number(row.montant_don) || 0,
       mode: row.mode_paiement,
       encaissePar: row.encaisse_par,
-      statut: row.statut_paiement || 'SUCCES',
+      statut: mappedStatut,
+      codeOtp: row.code_validation_otp || undefined,
+      motifRejetPaiement: motifRejet,
       nomPayeur: row.nom_payeur,
       telephonePayeur: row.telephone_payeur || undefined,
       agentNom: row.nom_agent || undefined,
       date: row.date_paiement || new Date().toISOString(),
-      notes: row.observations || undefined,
+      notes: cleanedObs || undefined,
     };
   },
 
@@ -184,6 +208,7 @@ export const Mappers = {
       mode_paiement: p.mode,
       encaisse_par: p.encaissePar,
       statut_paiement: p.statut || 'SUCCES',
+      code_validation_otp: p.codeOtp || null,
       nom_payeur: p.nomPayeur,
       telephone_payeur: p.telephonePayeur || null,
       nom_agent: p.agentNom || null,
@@ -204,7 +229,7 @@ export const Mappers = {
       montantScolarite: montant,
       fraisInscription: fraisInsc,
       fraisAnnexes: fraisAnnexes,
-      totalExigible: Number(row.total_exigible) || (montant + fraisInsc + fraisAnnexes),
+      totalExigible: Number(row.total_exigible) || montant + fraisInsc + fraisAnnexes,
       updatedAt: row.updated_at || new Date().toISOString(),
     };
   },

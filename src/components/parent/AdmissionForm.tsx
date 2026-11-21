@@ -13,9 +13,13 @@ import {
   HeartHandshake, 
   FileText,
   School,
-  HelpCircle
+  HelpCircle,
+  RefreshCw,
+  Wifi,
+  Clock
 } from 'lucide-react';
 import { SchoolStore, CURRENT_SCHOOL_YEAR } from '../../services/store';
+import { SyncService } from '../../services/sync';
 import { AdmissionRequest, AcademicDecision, TransferReason } from '../../types';
 
 async function compressImageToDataUrl(file: File): Promise<string> {
@@ -96,6 +100,12 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
 
   const [notes, setNotes] = useState('');
   const [submittedRequest, setSubmittedRequest] = useState<AdmissionRequest | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{
+    synced: boolean;
+    error?: string;
+    retrying?: boolean;
+  } | null>(null);
   const [error, setError] = useState('');
 
   const classes = [
@@ -139,13 +149,15 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
         const compressed = await compressImageToDataUrl(file);
         setBulletinUrl(compressed);
       } else if (file.size <= 160 * 1024) {
-        const reader = new FileReader();
-        reader.onload = (uploadEvent) => {
-          if (uploadEvent.target?.result) {
-            setBulletinUrl(uploadEvent.target.result as string);
-          }
-        };
-        reader.readAsDataURL(file);
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (uploadEvent) => {
+            resolve(typeof uploadEvent.target?.result === 'string' ? uploadEvent.target.result : '');
+          };
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(file);
+        });
+        setBulletinUrl(dataUrl);
       } else {
         // Large PDF: keep filename metadata without overflowing mobile localStorage
         setBulletinUrl('');
@@ -157,8 +169,9 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || isProcessingFile) return;
     setError('');
 
     if (!nomEnfant.trim() || !prenomEnfant.trim() || !telephoneParent.trim() || !nomParent.trim()) {
@@ -167,15 +180,16 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
     }
 
     if (estNouveauTransfert && !descriptionVenue.trim()) {
-      setError('Veuillez préciser la raison de la venue de l\'élève dans notre école (déménagement, problème, etc.).');
+      setError("Veuillez préciser la raison de la venue de l'élève dans notre école (déménagement, problème, etc.).");
       return;
     }
 
+    setIsSubmitting(true);
     try {
-      const donValue = Number(customDon) || 0;
+      const donValue = Math.max(0, Number(customDon) || 0);
       const parsedMoyenne = moyenneAnnuelle.trim() === '' ? undefined : Number(moyenneAnnuelle);
 
-      const newReq = SchoolStore.addAdmissionRequest({
+      const res = await SchoolStore.addAdmissionRequestAsync({
         nomEnfant: nomEnfant.trim(),
         prenomEnfant: prenomEnfant.trim(),
         dateNaissance: dateNaissance || '2018-01-01',
@@ -196,11 +210,25 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
         montantDon: donValue,
       });
 
-      setSubmittedRequest(newReq);
-      onSuccess(newReq);
+      setSubmittedRequest(res.request);
+      setSyncStatus({ synced: res.synced, error: res.error });
+      void SyncService.synchroniserMaintenant();
+      onSuccess(res.request);
     } catch (err) {
       console.error('[AdmissionForm] Erreur soumission:', err);
       setError("Une erreur est survenue lors de l'enregistrement de la demande. Veuillez réessayer.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRetrySync = async () => {
+    if (!submittedRequest) return;
+    setSyncStatus((prev) => ({ synced: prev?.synced ?? false, error: prev?.error, retrying: true }));
+    const res = await SchoolStore.retrySyncAdmission(submittedRequest.id);
+    setSyncStatus({ synced: res.synced, error: res.error, retrying: false });
+    if (res.synced) {
+      void SyncService.synchroniserMaintenant();
     }
   };
 
@@ -216,29 +244,72 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
     setDescriptionVenue('');
     setEtablissementOrigine('');
     setHasUploadedFile(false);
+    setBulletinUrl('');
     setSubmittedRequest(null);
+    setSyncStatus(null);
     setError('');
   };
 
   if (submittedRequest) {
+    const isSynced = syncStatus?.synced !== false;
     return (
-      <div className="bg-white rounded-2xl border border-emerald-200 p-8 shadow-sm text-center max-w-xl mx-auto">
-        <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4">
-          <CheckCircle2 className="w-8 h-8" />
+      <div className={`bg-white rounded-2xl border p-5 sm:p-8 shadow-sm text-center max-w-xl mx-auto ${
+        isSynced ? 'border-emerald-200' : 'border-amber-300'
+      }`}>
+        <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${
+          isSynced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+        }`}>
+          {isSynced ? <CheckCircle2 className="w-8 h-8" /> : <Clock className="w-8 h-8" />}
         </div>
-        <h3 className="text-xl font-bold text-slate-900 mb-2">
-          Dossier d'Admission Transmis au Secrétariat !
+        <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-2">
+          {isSynced
+            ? "Dossier d'Admission Transmis au Secrétariat !"
+            : "Demande Enregistrée sur votre Téléphone (Envoi en attente)"}
         </h3>
-        <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+        <p className="text-xs sm:text-sm text-slate-600 mb-4 leading-relaxed">
           Le dossier de <strong className="text-slate-900">{submittedRequest.prenomEnfant} {submittedRequest.nomEnfant}</strong> pour la classe de <strong className="text-emerald-700">{submittedRequest.classeDemandee}</strong> a bien été enregistré.
         </p>
 
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 text-left text-xs space-y-2.5">
-          <div className="flex justify-between">
-            <span className="text-slate-500">Numéro de dossier :</span>
-            <span className="font-mono font-bold text-slate-800">{submittedRequest.id}</span>
+        {/* État réel de livraison vers le PC du secrétariat */}
+        {isSynced ? (
+          <div className="mb-5 flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+            <Wifi className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Reçu par le serveur : visible immédiatement sur le poste du secrétariat.</span>
           </div>
-          <div className="flex justify-between">
+        ) : (
+          <div className="mb-5 p-4 rounded-xl bg-amber-50 border border-amber-300 text-left space-y-2.5 text-xs text-amber-950">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Connexion au serveur en attente</p>
+                <p className="text-[11px] text-amber-900 mt-0.5">
+                  Votre demande est sauvegardée sur cet appareil et sera renvoyée automatiquement dès que la connexion répondra.
+                </p>
+                {syncStatus?.error && (
+                  <p className="text-[10px] font-mono text-rose-700 mt-1 break-words">
+                    Détail technique : {syncStatus.error}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleRetrySync}
+              disabled={syncStatus?.retrying}
+              className="w-full py-2 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncStatus?.retrying ? 'animate-spin' : ''}`} />
+              <span>{syncStatus?.retrying ? 'Envoi en cours...' : 'Renvoyer maintenant au secrétariat'}</span>
+            </button>
+          </div>
+        )}
+
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 text-left text-xs space-y-2.5">
+          <div className="flex flex-wrap justify-between gap-1">
+            <span className="text-slate-500">Numéro de dossier :</span>
+            <span className="font-mono font-bold text-slate-800 break-all">{submittedRequest.id}</span>
+          </div>
+          <div className="flex flex-wrap justify-between gap-1">
             <span className="text-slate-500">Décision bulletin 3ème trimestre :</span>
             <span className={`font-semibold ${
               submittedRequest.decisionBulletin === 'PASSAGE' 
@@ -254,9 +325,9 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
                 : 'Nouveau cycle'}
             </span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex flex-wrap justify-between gap-1">
             <span className="text-slate-500">Bulletin joint :</span>
-            <span className="font-mono text-slate-800">{submittedRequest.bulletinNomFichier}</span>
+            <span className="font-mono text-slate-800 truncate max-w-[210px]">{submittedRequest.bulletinNomFichier}</span>
           </div>
           {submittedRequest.montantDon > 0 && (
             <div className="flex justify-between border-t border-slate-200 pt-1.5">
@@ -270,7 +341,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
 
         <button
           onClick={handleReset}
-          className="px-5 py-2.5 text-xs font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer"
+          className="w-full sm:w-auto px-5 py-2.5 text-xs font-semibold rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer"
         >
           Inscrire un autre enfant
         </button>
@@ -638,10 +709,25 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
         {/* Submit Button */}
         <button
           type="submit"
-          className="w-full py-3.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+          disabled={isSubmitting || isProcessingFile}
+          className="w-full py-3.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:bg-emerald-500 disabled:cursor-not-allowed text-white font-bold text-sm transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
         >
-          <Send className="w-4 h-4" />
-          <span>Soumettre le Dossier avec Bulletin au Secrétariat</span>
+          {isSubmitting ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+              <span>Transmission au secrétariat en cours...</span>
+            </>
+          ) : isProcessingFile ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+              <span>Préparation du bulletin...</span>
+            </>
+          ) : (
+            <>
+              <Send className="w-4 h-4 shrink-0" />
+              <span>Soumettre le Dossier avec Bulletin au Secrétariat</span>
+            </>
+          )}
         </button>
       </form>
     </div>

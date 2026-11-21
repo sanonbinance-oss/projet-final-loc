@@ -17,10 +17,12 @@ import {
   School,
   FileText,
   Eye,
-  FileSearch
+  FileSearch,
+  RefreshCw
 } from 'lucide-react';
 import { AdmissionRequest, Student } from '../../types';
 import { SchoolStore } from '../../services/store';
+import { SyncService } from '../../services/sync';
 import { DocumentViewerModal } from './DocumentViewerModal';
 
 interface AdmissionsTabProps {
@@ -38,11 +40,11 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
   const [search, setSearch] = useState('');
   const [viewDetailsAdmission, setViewDetailsAdmission] = useState<AdmissionRequest | null>(null);
   const [inspectingAdmission, setInspectingAdmission] = useState<AdmissionRequest | null>(null);
-  const [scolariteInitiale, setScolariteInitiale] = useState<number>(180000);
   const [motifRefus, setMotifRefus] = useState('');
   const [refusalModalId, setRefusalModalId] = useState<string | null>(null);
   const [acceptedStudent, setAcceptedStudent] = useState<Student | null>(null);
   const [rejectedFeedback, setRejectedFeedback] = useState<{ childName: string; motif: string } | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const filtered = admissions.filter((req) => {
     if (filterStatus !== 'all' && req.statut !== filterStatus) return false;
@@ -62,8 +64,17 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
   const acceptedCount = admissions.filter((a) => a.statut === 'accepte').length;
   const rejectedCount = admissions.filter((a) => a.statut === 'refuse').length;
 
+  const handleRefreshAdmissions = async () => {
+    setIsRefreshing(true);
+    try {
+      await SyncService.synchroniserMaintenant();
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 300);
+    }
+  };
+
   const handleAccept = (req: AdmissionRequest) => {
-    const student = SchoolStore.acceptAdmission(req.id, scolariteInitiale);
+    const student = SchoolStore.acceptAdmission(req.id);
     if (student) {
       setAcceptedStudent(student);
       onAdmissionAccepted(student);
@@ -104,53 +115,66 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
           </p>
         </div>
 
-        {/* Filter buttons */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+        {/* Filter & Refresh buttons */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           <button
-            onClick={() => setFilterStatus('all')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-              filterStatus === 'all'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            type="button"
+            onClick={handleRefreshAdmissions}
+            disabled={isRefreshing}
+            className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
+            title="Forcer la réception des nouvelles demandes envoyées par les parents"
           >
-            Toutes ({admissions.length})
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>{isRefreshing ? 'Actualisation...' : 'Actualiser'}</span>
           </button>
-          <button
-            onClick={() => setFilterStatus('en_attente')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
-              filterStatus === 'en_attente'
-                ? 'bg-white text-amber-800 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>En attente</span>
-            {pendingCount > 0 && (
-              <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-full text-[10px]">
-                {pendingCount}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setFilterStatus('accepte')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-              filterStatus === 'accepte'
-                ? 'bg-white text-emerald-800 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Acceptées ({acceptedCount})
-          </button>
-          <button
-            onClick={() => setFilterStatus('refuse')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-              filterStatus === 'refuse'
-                ? 'bg-white text-rose-800 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Refusées ({rejectedCount})
-          </button>
+
+          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+            <button
+              onClick={() => setFilterStatus('all')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                filterStatus === 'all'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Toutes ({admissions.length})
+            </button>
+            <button
+              onClick={() => setFilterStatus('en_attente')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                filterStatus === 'en_attente'
+                  ? 'bg-white text-amber-800 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>En attente</span>
+              {pendingCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-full text-[10px]">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setFilterStatus('accepte')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                filterStatus === 'accepte'
+                  ? 'bg-white text-emerald-800 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Acceptées ({acceptedCount})
+            </button>
+            <button
+              onClick={() => setFilterStatus('refuse')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                filterStatus === 'refuse'
+                  ? 'bg-white text-rose-800 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Refusées ({rejectedCount})
+            </button>
+          </div>
         </div>
       </div>
 

@@ -199,7 +199,19 @@ const STORAGE_KEYS = {
   SCHOOL: 'edupay_etablissement_supabase_v5',
   TARIFS: 'edupay_tarifs_supabase_v5',
   AUDIT_LOGS: 'edupay_journal_activites_v5',
+  OUTBOX: 'edupay_sync_outbox_v5',
 };
+
+export type OutboxKind = 'ELEVE' | 'INSCRIPTION' | 'DEMANDE' | 'PAIEMENT' | 'AUDIT' | 'TARIF';
+
+export interface OutboxEntry {
+  key: string;
+  kind: OutboxKind;
+  recordId: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  lastError?: string;
+}
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -240,6 +252,28 @@ function safeSetItem(key: string, value: unknown) {
         } catch {
           // Keep in-memory fallback only
         }
+      }
+    } else if (key === STORAGE_KEYS.OUTBOX && Array.isArray(value)) {
+      try {
+        const trimmed = value.map((entry: OutboxEntry) => {
+          const obs = entry?.payload?.observations_secretaire;
+          if (typeof obs === 'string' && obs.includes('[BULLETIN_IMG]')) {
+            const cleanObs = obs.replace(/\[BULLETIN_IMG\][\s\S]*?\[\/BULLETIN_IMG\]\s*/g, '').trim();
+            return {
+              ...entry,
+              payload: {
+                ...entry.payload,
+                observations_secretaire: cleanObs || undefined,
+              },
+            };
+          }
+          return entry;
+        });
+        const trimmedStr = JSON.stringify(trimmed);
+        memoryFallbackStore[key] = trimmedStr;
+        localStorage.setItem(key, trimmedStr);
+      } catch {
+        // Keep in-memory fallback only
       }
     }
   }
@@ -451,36 +485,9 @@ export class SchoolStore {
     students.unshift(newStudent);
     this.saveStudents(students);
 
-    // Sync in background with Supabase (eleves & inscriptions_annuelles)
-    SupabaseSyncService.syncEleveToSupabase({
-      id: newStudent.id,
-      matricule: newStudent.matricule,
-      nom: newStudent.nom,
-      prenom: newStudent.prenom,
-      date_naissance: newStudent.dateNaissance,
-      classe: newStudent.classe,
-      annee_scolaire: newStudent.anneeScolaire,
-      scolarite_totale: newStudent.scolariteTotale,
-      montant_paye: newStudent.montantPaye,
-      montant_don_total: newStudent.montantDonTotal,
-      nom_parent: newStudent.nomParent,
-      telephone_parent: newStudent.telephoneParent,
-      email_parent: newStudent.emailParent,
-      adresse_domicile: newStudent.adresse,
-      annee_origine: newStudent.anneeOrigine,
-      classe_precedente: newStudent.classePrecedente,
-      statut_fin_annee: newStudent.statutFinAnnee,
-      statut_reinscription: newStudent.statutReinscription,
-      decision_bulletin: newStudent.decisionBulletin,
-      moyenne_annuelle: newStudent.moyenneAnnuelle,
-      etablissement_origine: newStudent.etablissementOrigine,
-      motif_venue: newStudent.motifVenue,
-      description_motif: newStudent.descriptionVenue,
-      bulletin_nom_fichier: newStudent.bulletinNomFichier,
-      statut_inscription: newStudent.statut,
-    });
-
-    SupabaseSyncService.syncInscriptionAnnuelleToSupabase({
+    // Sync sequentially (eleve must exist in Postgres before inscriptions_annuelles FK)
+    const stuPayload = this.buildStudentPayload(newStudent);
+    const inscPayload = {
       eleve_id: newStudent.id,
       eleve_matricule: newStudent.matricule,
       annee_scolaire: newStudent.anneeScolaire,
@@ -488,7 +495,18 @@ export class SchoolStore {
       scolarite_totale: newStudent.scolariteTotale,
       montant_paye: newStudent.montantPaye,
       statut_reinscription: newStudent.statutReinscription || 'REINSCRIT',
-    });
+    };
+    this.enqueueOutbox('ELEVE', newStudent.id, stuPayload);
+    this.enqueueOutbox('INSCRIPTION', newStudent.id, inscPayload);
+
+    void (async () => {
+      const stuRes = await SupabaseSyncService.syncEleveToSupabase(stuPayload);
+      if (stuRes.ok) {
+        this.removeOutbox('ELEVE', newStudent.id);
+        const inscRes = await SupabaseSyncService.syncInscriptionAnnuelleToSupabase(inscPayload);
+        if (inscRes.ok) this.removeOutbox('INSCRIPTION', newStudent.id);
+      }
+    })();
 
     this.addAuditLog({
       typeAction: 'INSCRIPTION_MANUELLE',
@@ -690,26 +708,9 @@ export class SchoolStore {
 
     this.saveStudents(students);
 
-    // Sync updated re-enrollment status and annual registration to Supabase
-    SupabaseSyncService.syncEleveToSupabase({
-      id: student.id,
-      matricule: student.matricule,
-      nom: student.nom,
-      prenom: student.prenom,
-      classe: student.classe,
-      annee_scolaire: student.anneeScolaire,
-      scolarite_totale: student.scolariteTotale,
-      montant_paye: student.montantPaye,
-      montant_don_total: student.montantDonTotal,
-      nom_parent: student.nomParent,
-      telephone_parent: student.telephoneParent,
-      statut_reinscription: 'REINSCRIT',
-      classe_precedente: student.classePrecedente,
-      statut_fin_annee: student.statutFinAnnee,
-      annee_origine: student.anneeOrigine,
-    });
-
-    SupabaseSyncService.syncInscriptionAnnuelleToSupabase({
+    // Sync sequentially (eleve must exist in Postgres before inscriptions_annuelles FK)
+    const stuPayload = this.buildStudentPayload(student);
+    const inscPayload = {
       eleve_id: student.id,
       eleve_matricule: student.matricule,
       annee_scolaire: CURRENT_SCHOOL_YEAR,
@@ -717,7 +718,18 @@ export class SchoolStore {
       scolarite_totale: student.scolariteTotale,
       montant_paye: student.montantPaye || 0,
       statut_reinscription: 'REINSCRIT',
-    });
+    };
+    this.enqueueOutbox('ELEVE', student.id, stuPayload);
+    this.enqueueOutbox('INSCRIPTION', student.id, inscPayload);
+
+    void (async () => {
+      const stuRes = await SupabaseSyncService.syncEleveToSupabase(stuPayload);
+      if (stuRes.ok) {
+        this.removeOutbox('ELEVE', student.id);
+        const inscRes = await SupabaseSyncService.syncInscriptionAnnuelleToSupabase(inscPayload);
+        if (inscRes.ok) this.removeOutbox('INSCRIPTION', student.id);
+      }
+    })();
 
     this.addAuditLog({
       typeAction: 'REINSCRIPTION_EFFECTUEE',
@@ -762,6 +774,196 @@ export class SchoolStore {
   }
 
   /* ==========================================================================
+     FILE D'ATTENTE DE SYNCHRONISATION (OUTBOX ANTI-PERTE)
+     ========================================================================== */
+  static getOutbox(): OutboxEntry[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = safeGetItem(STORAGE_KEYS.OUTBOX);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  }
+
+  static saveOutbox(entries: OutboxEntry[]) {
+    if (typeof window !== 'undefined') {
+      safeSetItem(STORAGE_KEYS.OUTBOX, entries);
+    }
+  }
+
+  static enqueueOutbox(
+    kind: OutboxKind,
+    recordId: string,
+    payload: Record<string, unknown>,
+    lastError?: string
+  ) {
+    const entries = this.getOutbox();
+    const key = `${kind}:${recordId}`;
+    const existingIdx = entries.findIndex((e) => e.key === key);
+    const entry: OutboxEntry = {
+      key,
+      kind,
+      recordId,
+      payload,
+      createdAt: new Date().toISOString(),
+      lastError,
+    };
+    if (existingIdx !== -1) {
+      entries[existingIdx] = entry;
+    } else {
+      entries.push(entry);
+    }
+    this.saveOutbox(entries);
+  }
+
+  static removeOutbox(kind: OutboxKind, recordId: string) {
+    const entries = this.getOutbox();
+    const key = `${kind}:${recordId}`;
+    const filtered = entries.filter((e) => e.key !== key);
+    if (filtered.length !== entries.length) {
+      this.saveOutbox(filtered);
+    }
+  }
+
+  static async flushOutbox(): Promise<{ flushed: number; remaining: number }> {
+    const entries = this.getOutbox();
+    if (entries.length === 0) return { flushed: 0, remaining: 0 };
+
+    // Respect foreign key dependencies: ELEVE first, then TARIF/INSCRIPTION/DEMANDE/PAIEMENT/AUDIT
+    const order: Record<OutboxKind, number> = {
+      TARIF: 1,
+      ELEVE: 2,
+      INSCRIPTION: 3,
+      DEMANDE: 4,
+      PAIEMENT: 5,
+      AUDIT: 6,
+    };
+    const sorted = [...entries].sort((a, b) => order[a.kind] - order[b.kind]);
+    const remaining: OutboxEntry[] = [];
+    let flushed = 0;
+
+    for (const item of sorted) {
+      let res: { ok: boolean; error?: string } = { ok: false };
+      if (item.kind === 'ELEVE') {
+        res = await SupabaseSyncService.syncEleveToSupabase(item.payload);
+      } else if (item.kind === 'DEMANDE') {
+        res = await SupabaseSyncService.syncDemandeAdmissionToSupabase(item.payload);
+      } else if (item.kind === 'PAIEMENT') {
+        res = await SupabaseSyncService.syncPaiementToSupabase(item.payload);
+      } else if (item.kind === 'INSCRIPTION') {
+        res = await SupabaseSyncService.syncInscriptionAnnuelleToSupabase(item.payload as any);
+      } else if (item.kind === 'TARIF') {
+        res = await SupabaseSyncService.syncTarifToSupabase(item.payload as any);
+      } else if (item.kind === 'AUDIT') {
+        res = await SupabaseSyncService.syncAuditLogToSupabase(item.payload as any);
+      }
+
+      if (res.ok) {
+        flushed++;
+      } else {
+        remaining.push({ ...item, lastError: res.error });
+      }
+    }
+
+    this.saveOutbox(remaining);
+    return { flushed, remaining: remaining.length };
+  }
+
+  private static buildStudentPayload(student: Student): Record<string, unknown> {
+    return {
+      id: student.id,
+      matricule: student.matricule,
+      nom: student.nom,
+      prenom: student.prenom,
+      date_naissance: student.dateNaissance || null,
+      classe: student.classe,
+      annee_scolaire: student.anneeScolaire,
+      scolarite_totale: student.scolariteTotale,
+      montant_paye: student.montantPaye || 0,
+      montant_don_total: student.montantDonTotal || 0,
+      nom_parent: student.nomParent,
+      telephone_parent: student.telephoneParent,
+      email_parent: student.emailParent,
+      adresse_domicile: student.adresse,
+      annee_origine: student.anneeOrigine,
+      classe_precedente: student.classePrecedente,
+      statut_fin_annee: student.statutFinAnnee,
+      statut_reinscription: student.statutReinscription,
+      decision_bulletin: student.decisionBulletin,
+      moyenne_annuelle: student.moyenneAnnuelle,
+      etablissement_origine: student.etablissementOrigine,
+      motif_venue: student.motifVenue,
+      description_motif: student.descriptionVenue,
+      bulletin_nom_fichier: student.bulletinNomFichier,
+      statut_inscription: student.statut,
+    };
+  }
+
+  private static buildPaymentPayload(payment: Payment, overrideObservations?: string): Record<string, unknown> {
+    return {
+      id: payment.id,
+      reference_quittance: payment.reference,
+      annee_scolaire: payment.anneeScolaire || CURRENT_SCHOOL_YEAR,
+      eleve_id: payment.studentId,
+      eleve_matricule: payment.studentMatricule,
+      nom_eleve: payment.studentNom,
+      classe_eleve: payment.studentClasse,
+      montant_total: payment.montant,
+      montant_scolarite: payment.montantScolarite,
+      montant_don: payment.montantDon,
+      mode_paiement: payment.mode,
+      encaisse_par: payment.encaissePar,
+      statut_paiement: payment.statut,
+      code_validation_otp: payment.codeOtp,
+      nom_payeur: payment.nomPayeur,
+      telephone_payeur: payment.telephonePayeur,
+      nom_agent: payment.agentNom,
+      observations: overrideObservations ?? payment.notes,
+    };
+  }
+
+  private static buildAdmissionPayload(req: AdmissionRequest): Record<string, unknown> {
+    const safeAvg =
+      req.moyenneAnnuelle !== undefined && !Number.isNaN(req.moyenneAnnuelle)
+        ? Math.round(Math.min(20, Math.max(0, Number(req.moyenneAnnuelle))) * 100) / 100
+        : undefined;
+    const safeFileName = req.bulletinNomFichier ? req.bulletinNomFichier.slice(0, 200) : undefined;
+    const statutUpper =
+      req.statut === 'accepte' ? 'ACCEPTE' : req.statut === 'refuse' ? 'REFUSE' : 'EN_ATTENTE';
+
+    return {
+      id: req.id,
+      annee_scolaire: req.anneeScolaire || CURRENT_SCHOOL_YEAR,
+      nom_enfant: req.nomEnfant.slice(0, 100),
+      prenom_enfant: req.prenomEnfant.slice(0, 100),
+      date_naissance: req.dateNaissance || '2018-01-01',
+      classe_demandee: req.classeDemandee.slice(0, 50),
+      nom_parent: req.nomParent.slice(0, 150),
+      telephone_parent: req.telephoneParent.slice(0, 50),
+      email_parent: req.emailParent ? req.emailParent.slice(0, 150) : undefined,
+      adresse_domicile: req.adresse,
+      est_nouvel_eleve: req.estNouveauTransfert,
+      etablissement_origine: req.etablissementOrigine ? req.etablissementOrigine.slice(0, 250) : undefined,
+      decision_bulletin: req.decisionBulletin,
+      moyenne_annuelle: safeAvg,
+      motif_venue: req.motifVenue,
+      description_motif: req.descriptionVenue?.trim() || "Demande d'inscription en ligne",
+      bulletin_nom_fichier: safeFileName,
+      observations_secretaire: encodeAdmissionObservations(req.notes, req.bulletinUrl),
+      montant_don: Number(req.montantDon) || 0,
+      statut_admission: statutUpper,
+      matricule_attribue: req.matriculeAttribue,
+      motif_refus: req.motifRefus,
+      date_traitement: req.dateTraitement,
+    };
+  }
+
+  /* ==========================================================================
      PAIEMENTS & ENCAISSEMENTS
      ========================================================================== */
   static getPayments(): Payment[] {
@@ -782,51 +984,33 @@ export class SchoolStore {
     }
   }
 
-  static addPayment(payment: Payment) {
+  private static preparePaymentLocally(payment: Payment): { updatedStudent?: Student } {
     const payments = this.getPayments();
     payments.unshift(payment);
     this.savePayments(payments);
 
-    // Only update student balance if already confirmed (ex: cash desk)
+    let updatedStudent: Student | undefined;
     if (payment.statut === 'SUCCES') {
       const students = this.getStudents();
       const studentIndex = students.findIndex((s) => s.id === payment.studentId);
       if (studentIndex !== -1) {
-        const student = students[studentIndex];
+        const student = { ...students[studentIndex] };
         student.montantPaye = (student.montantPaye || 0) + payment.montantScolarite;
         student.montantDonTotal = (student.montantDonTotal || 0) + (payment.montantDon || 0);
+        students[studentIndex] = student;
         this.saveStudents(students);
+        updatedStudent = student;
       }
     }
-
-    // Sync in background to Supabase
-    SupabaseSyncService.syncPaiementToSupabase({
-      id: payment.id,
-      reference_quittance: payment.reference,
-      annee_scolaire: payment.anneeScolaire || CURRENT_SCHOOL_YEAR,
-      eleve_id: payment.studentId,
-      eleve_matricule: payment.studentMatricule,
-      nom_eleve: payment.studentNom,
-      classe_eleve: payment.studentClasse,
-      montant_total: payment.montant,
-      montant_scolarite: payment.montantScolarite,
-      montant_don: payment.montantDon,
-      mode_paiement: payment.mode,
-      encaisse_par: payment.encaissePar,
-      statut_paiement: payment.statut,
-      nom_payeur: payment.nomPayeur,
-      telephone_payeur: payment.telephonePayeur,
-      nom_agent: payment.agentNom,
-      observations: payment.notes,
-    });
 
     const isEspeces = payment.mode === 'ESPECES_GUICHET';
     this.addAuditLog({
       typeAction: isEspeces ? 'ENCAISSEMENT_ESPECES' : 'PAIEMENT_MOBILE_MONEY',
       auteur: payment.agentNom || payment.encaissePar || 'Caisse Secrétariat',
-      description: payment.statut === 'EN_ATTENTE_VERIFICATION'
-        ? `Nouvelle notification Mobile Money (${payment.mode}) de ${payment.montant.toLocaleString()} FCFA soumise par ${payment.nomPayeur} - En attente de vérification bancaire/SMS par la secrétaire`
-        : `Règlement de ${payment.montant.toLocaleString()} FCFA pour ${payment.studentNom} (${payment.studentClasse}) - Quittance : ${payment.reference}`,
+      description:
+        payment.statut === 'EN_ATTENTE_VERIFICATION'
+          ? `Nouvelle notification Mobile Money (${payment.mode}) de ${payment.montant.toLocaleString()} FCFA soumise par ${payment.nomPayeur} - En attente de vérification bancaire/SMS par la secrétaire`
+          : `Règlement de ${payment.montant.toLocaleString()} FCFA pour ${payment.studentNom} (${payment.studentClasse}) - Quittance : ${payment.reference}`,
       details: {
         reference: payment.reference,
         montant: payment.montant,
@@ -837,6 +1021,35 @@ export class SchoolStore {
       },
       niveauGravite: payment.statut === 'EN_ATTENTE_VERIFICATION' ? 'AVERTISSEMENT' : 'INFO',
     });
+
+    return { updatedStudent };
+  }
+
+  static async addPaymentAsync(payment: Payment): Promise<{ synced: boolean; error?: string }> {
+    const { updatedStudent } = this.preparePaymentLocally(payment);
+    const payPayload = this.buildPaymentPayload(payment);
+    this.enqueueOutbox('PAIEMENT', payment.id, payPayload);
+
+    if (updatedStudent) {
+      const stuPayload = this.buildStudentPayload(updatedStudent);
+      this.enqueueOutbox('ELEVE', updatedStudent.id, stuPayload);
+      const stuRes = await SupabaseSyncService.syncEleveToSupabase(stuPayload);
+      if (stuRes.ok) {
+        this.removeOutbox('ELEVE', updatedStudent.id);
+      }
+    }
+
+    const payRes = await SupabaseSyncService.syncPaiementToSupabase(payPayload);
+    if (payRes.ok) {
+      this.removeOutbox('PAIEMENT', payment.id);
+      return { synced: true };
+    }
+    this.enqueueOutbox('PAIEMENT', payment.id, payPayload, payRes.error);
+    return { synced: false, error: payRes.error };
+  }
+
+  static addPayment(payment: Payment) {
+    void this.addPaymentAsync(payment);
   }
 
   /**
@@ -848,42 +1061,47 @@ export class SchoolStore {
     const index = payments.findIndex((p) => p.id === paymentId);
     if (index === -1) return null;
 
-    const payment = payments[index];
+    const payment = { ...payments[index] };
     payment.statut = 'SUCCES';
     payment.dateValidationSecretaire = new Date().toISOString();
     payment.agentNom = agentNom;
+    payment.encaissePar = 'SECRETAIRE_GUICHET';
+    payments[index] = payment;
     this.savePayments(payments);
 
-    // Update student balance
+    // Update student balance AND sync updated student balance to Supabase
     const students = this.getStudents();
     const studentIndex = students.findIndex((s) => s.id === payment.studentId);
+    let updatedStudent: Student | undefined;
     if (studentIndex !== -1) {
-      const student = students[studentIndex];
+      const student = { ...students[studentIndex] };
       student.montantPaye = (student.montantPaye || 0) + payment.montantScolarite;
       student.montantDonTotal = (student.montantDonTotal || 0) + (payment.montantDon || 0);
+      students[studentIndex] = student;
       this.saveStudents(students);
+      updatedStudent = student;
     }
 
-    // Sync to Supabase
-    SupabaseSyncService.syncPaiementToSupabase({
-      id: payment.id,
-      reference_quittance: payment.reference,
-      annee_scolaire: payment.anneeScolaire || CURRENT_SCHOOL_YEAR,
-      eleve_id: payment.studentId,
-      eleve_matricule: payment.studentMatricule,
-      nom_eleve: payment.studentNom,
-      classe_eleve: payment.studentClasse,
-      montant_total: payment.montant,
-      montant_scolarite: payment.montantScolarite,
-      montant_don: payment.montantDon,
-      mode_paiement: payment.mode,
-      encaisse_par: 'SECRETAIRE_GUICHET',
-      statut_paiement: 'SUCCES',
-      nom_payeur: payment.nomPayeur,
-      telephone_payeur: payment.telephonePayeur,
-      nom_agent: agentNom,
-      observations: `Paiement Mobile Money vérifié et validé par ${agentNom}. Reçu officiel débloqué.`,
-    });
+    const payPayload = this.buildPaymentPayload(
+      payment,
+      `Paiement Mobile Money vérifié et validé par ${agentNom}. Reçu officiel débloqué.`
+    );
+    this.enqueueOutbox('PAIEMENT', payment.id, payPayload);
+
+    void (async () => {
+      if (updatedStudent) {
+        const stuPayload = this.buildStudentPayload(updatedStudent);
+        this.enqueueOutbox('ELEVE', updatedStudent.id, stuPayload);
+        const stuRes = await SupabaseSyncService.syncEleveToSupabase(stuPayload);
+        if (stuRes.ok) this.removeOutbox('ELEVE', updatedStudent.id);
+      }
+      const payRes = await SupabaseSyncService.syncPaiementToSupabase(payPayload);
+      if (payRes.ok) {
+        this.removeOutbox('PAIEMENT', payment.id);
+      } else {
+        this.enqueueOutbox('PAIEMENT', payment.id, payPayload, payRes.error);
+      }
+    })();
 
     this.addAuditLog({
       typeAction: 'VALIDATION_PAIEMENT_MOBILE_MONEY',
@@ -905,34 +1123,28 @@ export class SchoolStore {
   /**
    * Rejet d'un paiement Mobile Money si les fonds n'ont pas été reçus sur le téléphone de l'école
    */
-  static rejectMobileMoneyPayment(paymentId: string, motif: string = 'Fonds non reçus sur le numéro de l\'établissement'): Payment | null {
+  static rejectMobileMoneyPayment(
+    paymentId: string,
+    motif: string = "Fonds non reçus sur le numéro de l'établissement"
+  ): Payment | null {
     const payments = this.getPayments();
     const index = payments.findIndex((p) => p.id === paymentId);
     if (index === -1) return null;
 
-    const payment = payments[index];
+    const payment = { ...payments[index] };
     payment.statut = 'ECHOUE';
     payment.motifRejetPaiement = motif;
+    payments[index] = payment;
     this.savePayments(payments);
 
-    // Sync to Supabase
-    SupabaseSyncService.syncPaiementToSupabase({
-      id: payment.id,
-      reference_quittance: payment.reference,
-      annee_scolaire: payment.anneeScolaire || CURRENT_SCHOOL_YEAR,
-      eleve_id: payment.studentId,
-      eleve_matricule: payment.studentMatricule,
-      nom_eleve: payment.studentNom,
-      classe_eleve: payment.studentClasse,
-      montant_total: payment.montant,
-      montant_scolarite: payment.montantScolarite,
-      montant_don: payment.montantDon,
-      mode_paiement: payment.mode,
-      encaisse_par: payment.encaissePar,
-      statut_paiement: 'ECHOUE',
-      nom_payeur: payment.nomPayeur,
-      telephone_payeur: payment.telephonePayeur,
-      observations: `Paiement rejeté par la caisse. Motif : ${motif}`,
+    const payPayload = this.buildPaymentPayload(payment, `Paiement rejeté par la caisse. Motif : ${motif}`);
+    this.enqueueOutbox('PAIEMENT', payment.id, payPayload);
+    void SupabaseSyncService.syncPaiementToSupabase(payPayload).then((res) => {
+      if (res.ok) {
+        this.removeOutbox('PAIEMENT', payment.id);
+      } else {
+        this.enqueueOutbox('PAIEMENT', payment.id, payPayload, res.error);
+      }
     });
 
     this.addAuditLog({
@@ -967,7 +1179,7 @@ export class SchoolStore {
     }
   }
 
-  static addAdmissionRequest(
+  private static createAdmissionLocally(
     request: Omit<AdmissionRequest, 'id' | 'dateDemande' | 'statut' | 'anneeScolaire'> & {
       anneeScolaire?: string;
     }
@@ -975,7 +1187,7 @@ export class SchoolStore {
     const admissions = this.getAdmissions();
     const safeAvg =
       request.moyenneAnnuelle !== undefined && !Number.isNaN(request.moyenneAnnuelle)
-        ? Math.min(20, Math.max(0, Number(request.moyenneAnnuelle)))
+        ? Math.round(Math.min(20, Math.max(0, Number(request.moyenneAnnuelle))) * 100) / 100
         : undefined;
     const safeFileName = request.bulletinNomFichier ? request.bulletinNomFichier.slice(0, 200) : undefined;
 
@@ -990,31 +1202,55 @@ export class SchoolStore {
     };
     admissions.unshift(newReq);
     this.saveAdmissions(admissions);
+    return newReq;
+  }
 
-    // Sync to Supabase demandes_admission
-    SupabaseSyncService.syncDemandeAdmissionToSupabase({
-      id: newReq.id,
-      annee_scolaire: newReq.anneeScolaire || CURRENT_SCHOOL_YEAR,
-      nom_enfant: newReq.nomEnfant.slice(0, 100),
-      prenom_enfant: newReq.prenomEnfant.slice(0, 100),
-      date_naissance: newReq.dateNaissance || '2018-01-01',
-      classe_demandee: newReq.classeDemandee.slice(0, 50),
-      nom_parent: newReq.nomParent.slice(0, 150),
-      telephone_parent: newReq.telephoneParent.slice(0, 50),
-      email_parent: newReq.emailParent ? newReq.emailParent.slice(0, 150) : undefined,
-      adresse_domicile: newReq.adresse,
-      est_nouvel_eleve: newReq.estNouveauTransfert,
-      etablissement_origine: newReq.etablissementOrigine ? newReq.etablissementOrigine.slice(0, 250) : undefined,
-      decision_bulletin: newReq.decisionBulletin,
-      moyenne_annuelle: newReq.moyenneAnnuelle,
-      motif_venue: newReq.motifVenue,
-      description_motif: newReq.descriptionVenue?.trim() || "Demande d'inscription en ligne",
-      bulletin_nom_fichier: safeFileName,
-      observations_secretaire: encodeAdmissionObservations(newReq.notes, newReq.bulletinUrl),
-      montant_don: Number(newReq.montantDon) || 0,
-      statut_admission: 'EN_ATTENTE',
+  static async addAdmissionRequestAsync(
+    request: Omit<AdmissionRequest, 'id' | 'dateDemande' | 'statut' | 'anneeScolaire'> & {
+      anneeScolaire?: string;
+    }
+  ): Promise<{ request: AdmissionRequest; synced: boolean; error?: string }> {
+    const newReq = this.createAdmissionLocally(request);
+    const payload = this.buildAdmissionPayload(newReq);
+    this.enqueueOutbox('DEMANDE', newReq.id, payload);
+
+    const res = await SupabaseSyncService.syncDemandeAdmissionToSupabase(payload);
+    if (res.ok) {
+      this.removeOutbox('DEMANDE', newReq.id);
+      return { request: newReq, synced: true };
+    }
+    this.enqueueOutbox('DEMANDE', newReq.id, payload, res.error);
+    return { request: newReq, synced: false, error: res.error };
+  }
+
+  static async retrySyncAdmission(requestId: string): Promise<{ synced: boolean; error?: string }> {
+    const req = this.getAdmissions().find((a) => a.id === requestId);
+    if (!req) return { synced: false, error: 'Demande introuvable localement' };
+    const payload = this.buildAdmissionPayload(req);
+    const res = await SupabaseSyncService.syncDemandeAdmissionToSupabase(payload);
+    if (res.ok) {
+      this.removeOutbox('DEMANDE', req.id);
+      return { synced: true };
+    }
+    this.enqueueOutbox('DEMANDE', req.id, payload, res.error);
+    return { synced: false, error: res.error };
+  }
+
+  static addAdmissionRequest(
+    request: Omit<AdmissionRequest, 'id' | 'dateDemande' | 'statut' | 'anneeScolaire'> & {
+      anneeScolaire?: string;
+    }
+  ): AdmissionRequest {
+    const newReq = this.createAdmissionLocally(request);
+    const payload = this.buildAdmissionPayload(newReq);
+    this.enqueueOutbox('DEMANDE', newReq.id, payload);
+    void SupabaseSyncService.syncDemandeAdmissionToSupabase(payload).then((res) => {
+      if (res.ok) {
+        this.removeOutbox('DEMANDE', newReq.id);
+      } else {
+        this.enqueueOutbox('DEMANDE', newReq.id, payload, res.error);
+      }
     });
-
     return newReq;
   }
 
@@ -1024,49 +1260,83 @@ export class SchoolStore {
     if (!req) return null;
 
     const tarif = this.getTarifForClass(req.classeDemandee, req.anneeScolaire || CURRENT_SCHOOL_YEAR);
-    const scolariteTotale = customScolarite !== undefined ? customScolarite : (tarif ? tarif.totalExigible : 200000);
+    const scolariteTotale =
+      customScolarite !== undefined ? customScolarite : tarif ? tarif.totalExigible : 200000;
 
-    const student = this.addStudent({
+    // Create student record locally (without firing parallel FK-racing demand update yet)
+    const students = this.getStudents();
+    const count = students.length + 1;
+    const matricule = `EDU-27-${count.toString().padStart(4, '0')}`;
+    const anneeScolaire = req.anneeScolaire || CURRENT_SCHOOL_YEAR;
+
+    const student: Student = {
+      id: 'STU_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      matricule,
       nom: req.nomEnfant.toUpperCase(),
       prenom: req.prenomEnfant,
       dateNaissance: req.dateNaissance,
       classe: req.classeDemandee,
-      anneeScolaire: req.anneeScolaire || CURRENT_SCHOOL_YEAR,
+      anneeScolaire,
       scolariteTotale,
+      montantPaye: 0,
+      montantDonTotal: req.montantDon || 0,
       nomParent: req.nomParent,
       telephoneParent: req.telephoneParent,
       emailParent: req.emailParent,
       adresse: req.adresse,
-      montantPaye: 0,
-      montantDonTotal: req.montantDon || 0,
+      dateInscription: new Date().toISOString().split('T')[0],
+      statut: 'inscrit',
+      statutReinscription: 'REINSCRIT',
       etablissementOrigine: req.etablissementOrigine,
       decisionBulletin: req.decisionBulletin,
       moyenneAnnuelle: req.moyenneAnnuelle,
       motifVenue: req.motifVenue,
       descriptionVenue: req.descriptionVenue,
       bulletinNomFichier: req.bulletinNomFichier,
-      statutReinscription: 'REINSCRIT',
-    });
+    };
+
+    students.unshift(student);
+    this.saveStudents(students);
 
     req.statut = 'accepte';
     req.matriculeAttribue = student.matricule;
     req.dateTraitement = new Date().toISOString();
     this.saveAdmissions(admissions);
 
-    SupabaseSyncService.syncDemandeAdmissionToSupabase({
-      id: req.id,
-      annee_scolaire: req.anneeScolaire || CURRENT_SCHOOL_YEAR,
-      nom_enfant: req.nomEnfant,
-      prenom_enfant: req.prenomEnfant,
-      classe_demandee: req.classeDemandee,
-      nom_parent: req.nomParent,
-      telephone_parent: req.telephoneParent,
-      description_motif: req.descriptionVenue?.trim() || "Demande d'inscription en ligne",
-      observations_secretaire: encodeAdmissionObservations(req.notes, req.bulletinUrl),
-      statut_admission: 'ACCEPTE',
-      matricule_attribue: student.matricule,
-      date_traitement: req.dateTraitement,
-    });
+    const stuPayload = this.buildStudentPayload(student);
+    const inscPayload = {
+      eleve_id: student.id,
+      eleve_matricule: student.matricule,
+      annee_scolaire: student.anneeScolaire,
+      classe: student.classe,
+      scolarite_totale: student.scolariteTotale,
+      montant_paye: student.montantPaye,
+      statut_reinscription: 'REINSCRIT',
+    };
+    const admPayload = this.buildAdmissionPayload(req);
+
+    this.enqueueOutbox('ELEVE', student.id, stuPayload);
+    this.enqueueOutbox('INSCRIPTION', student.id, inscPayload);
+    this.enqueueOutbox('DEMANDE', req.id, admPayload);
+
+    // CRITICAL: Sequential await so `eleves(matricule)` exists in Postgres BEFORE `demandes_admission(matricule_attribue)` references it!
+    void (async () => {
+      const stuRes = await SupabaseSyncService.syncEleveToSupabase(stuPayload);
+      if (stuRes.ok) {
+        this.removeOutbox('ELEVE', student.id);
+        const inscRes = await SupabaseSyncService.syncInscriptionAnnuelleToSupabase(inscPayload);
+        if (inscRes.ok) this.removeOutbox('INSCRIPTION', student.id);
+      } else {
+        this.enqueueOutbox('ELEVE', student.id, stuPayload, stuRes.error);
+      }
+
+      const admRes = await SupabaseSyncService.syncDemandeAdmissionToSupabase(admPayload);
+      if (admRes.ok) {
+        this.removeOutbox('DEMANDE', req.id);
+      } else {
+        this.enqueueOutbox('DEMANDE', req.id, admPayload, admRes.error);
+      }
+    })();
 
     this.addAuditLog({
       typeAction: 'VALIDATION_ADMISSION',
@@ -1092,19 +1362,14 @@ export class SchoolStore {
       req.dateTraitement = new Date().toISOString();
       this.saveAdmissions(admissions);
 
-      SupabaseSyncService.syncDemandeAdmissionToSupabase({
-        id: req.id,
-        annee_scolaire: req.anneeScolaire || CURRENT_SCHOOL_YEAR,
-        nom_enfant: req.nomEnfant,
-        prenom_enfant: req.prenomEnfant,
-        classe_demandee: req.classeDemandee,
-        nom_parent: req.nomParent,
-        telephone_parent: req.telephoneParent,
-        description_motif: req.descriptionVenue?.trim() || "Demande d'inscription en ligne",
-        observations_secretaire: encodeAdmissionObservations(req.notes, req.bulletinUrl),
-        statut_admission: 'REFUSE',
-        motif_refus: req.motifRefus,
-        date_traitement: req.dateTraitement,
+      const admPayload = this.buildAdmissionPayload(req);
+      this.enqueueOutbox('DEMANDE', req.id, admPayload);
+      void SupabaseSyncService.syncDemandeAdmissionToSupabase(admPayload).then((res) => {
+        if (res.ok) {
+          this.removeOutbox('DEMANDE', req.id);
+        } else {
+          this.enqueueOutbox('DEMANDE', req.id, admPayload, res.error);
+        }
       });
 
       this.addAuditLog({
@@ -1160,7 +1425,7 @@ export class SchoolStore {
     this.saveAuditLogs(logs);
 
     // Sync direct to Supabase
-    SupabaseSyncService.syncAuditLogToSupabase({
+    void SupabaseSyncService.syncAuditLogToSupabase({
       id: newLog.id,
       date_action: newLog.dateAction,
       type_action: newLog.typeAction,
@@ -1176,7 +1441,7 @@ export class SchoolStore {
   static getSchoolInfo(): SchoolInfo {
     if (typeof window === 'undefined') return DEFAULT_SCHOOL_INFO;
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.SCHOOL);
+      const stored = safeGetItem(STORAGE_KEYS.SCHOOL);
       if (stored) return JSON.parse(stored);
     } catch {
       // fallback
@@ -1190,6 +1455,7 @@ export class SchoolStore {
     this.savePayments([]);
     this.saveTarifs(DEFAULT_TARIFS_2027_2028);
     this.saveAuditLogs([]);
+    this.saveOutbox([]);
   }
 
   static subscribe(listener: Listener) {
