@@ -203,6 +203,53 @@ const STORAGE_KEYS = {
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
+const memoryFallbackStore: Record<string, string> = {};
+
+function safeGetItem(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(key) ?? memoryFallbackStore[key] ?? null;
+  } catch {
+    return memoryFallbackStore[key] ?? null;
+  }
+}
+
+function safeSetItem(key: string, value: unknown) {
+  if (typeof window === 'undefined') return;
+  const serialized = JSON.stringify(value);
+  memoryFallbackStore[key] = serialized;
+  try {
+    localStorage.setItem(key, serialized);
+  } catch (err) {
+    console.warn(`[SchoolStore] Quota localStorage dépassé pour ${key}, nettoyage des aperçus lourds...`, err);
+    if (key === STORAGE_KEYS.ADMISSIONS && Array.isArray(value)) {
+      try {
+        const trimmed = value.map((item, idx) =>
+          idx === 0 ? item : { ...item, bulletinUrl: undefined }
+        );
+        const trimmedStr = JSON.stringify(trimmed);
+        memoryFallbackStore[key] = trimmedStr;
+        localStorage.setItem(key, trimmedStr);
+        return;
+      } catch {
+        try {
+          const minimal = value.map((item) => ({ ...item, bulletinUrl: undefined }));
+          const minimalStr = JSON.stringify(minimal);
+          localStorage.setItem(key, minimalStr);
+          return;
+        } catch {
+          // Keep in-memory fallback only
+        }
+      }
+    }
+  }
+}
+
+function encodeAdmissionObservations(notes?: string, bulletinUrl?: string): string | undefined {
+  const hasImg = bulletinUrl && bulletinUrl.startsWith('data:image') && bulletinUrl.length <= 160000;
+  if (!hasImg) return notes || undefined;
+  return `[BULLETIN_IMG]${bulletinUrl}[/BULLETIN_IMG]${notes ? `\n${notes}` : ''}`;
+}
 
 function notifyListeners() {
   listeners.forEach((cb) => cb());
@@ -218,7 +265,7 @@ export class SchoolStore {
   static getTarifs(annee: string = CURRENT_SCHOOL_YEAR): TuitionTariff[] {
     if (typeof window === 'undefined') return DEFAULT_TARIFS_2027_2028;
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.TARIFS);
+      const stored = safeGetItem(STORAGE_KEYS.TARIFS);
       if (stored) {
         const parsed: TuitionTariff[] = JSON.parse(stored);
         if (parsed && parsed.length > 0) {
@@ -234,7 +281,7 @@ export class SchoolStore {
   static getAllTarifs(): TuitionTariff[] {
     if (typeof window === 'undefined') return DEFAULT_TARIFS_2027_2028;
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.TARIFS);
+      const stored = safeGetItem(STORAGE_KEYS.TARIFS);
       if (stored) {
         const parsed: TuitionTariff[] = JSON.parse(stored);
         if (parsed && parsed.length > 0) return parsed;
@@ -247,7 +294,7 @@ export class SchoolStore {
 
   static saveTarifs(tarifs: TuitionTariff[]) {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.TARIFS, JSON.stringify(tarifs));
+      safeSetItem(STORAGE_KEYS.TARIFS, tarifs);
       notifyListeners();
     }
   }
@@ -362,7 +409,7 @@ export class SchoolStore {
   static getStudents(): Student[] {
     if (typeof window === 'undefined') return [];
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+      const stored = safeGetItem(STORAGE_KEYS.STUDENTS);
       if (stored) return JSON.parse(stored);
     } catch {
       // fallback
@@ -372,7 +419,7 @@ export class SchoolStore {
 
   static saveStudents(students: Student[]) {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+      safeSetItem(STORAGE_KEYS.STUDENTS, students);
       notifyListeners();
     }
   }
@@ -720,7 +767,7 @@ export class SchoolStore {
   static getPayments(): Payment[] {
     if (typeof window === 'undefined') return [];
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.PAYMENTS);
+      const stored = safeGetItem(STORAGE_KEYS.PAYMENTS);
       if (stored) return JSON.parse(stored);
     } catch {
       // fallback
@@ -730,7 +777,7 @@ export class SchoolStore {
 
   static savePayments(payments: Payment[]) {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(payments));
+      safeSetItem(STORAGE_KEYS.PAYMENTS, payments);
       notifyListeners();
     }
   }
@@ -905,7 +952,7 @@ export class SchoolStore {
   static getAdmissions(): AdmissionRequest[] {
     if (typeof window === 'undefined') return [];
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.ADMISSIONS);
+      const stored = safeGetItem(STORAGE_KEYS.ADMISSIONS);
       if (stored) return JSON.parse(stored);
     } catch {
       // fallback
@@ -915,7 +962,7 @@ export class SchoolStore {
 
   static saveAdmissions(admissions: AdmissionRequest[]) {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.ADMISSIONS, JSON.stringify(admissions));
+      safeSetItem(STORAGE_KEYS.ADMISSIONS, admissions);
       notifyListeners();
     }
   }
@@ -926,8 +973,16 @@ export class SchoolStore {
     }
   ): AdmissionRequest {
     const admissions = this.getAdmissions();
+    const safeAvg =
+      request.moyenneAnnuelle !== undefined && !Number.isNaN(request.moyenneAnnuelle)
+        ? Math.min(20, Math.max(0, Number(request.moyenneAnnuelle)))
+        : undefined;
+    const safeFileName = request.bulletinNomFichier ? request.bulletinNomFichier.slice(0, 200) : undefined;
+
     const newReq: AdmissionRequest = {
       ...request,
+      moyenneAnnuelle: safeAvg,
+      bulletinNomFichier: safeFileName,
       id: 'ADM_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       dateDemande: new Date().toISOString(),
       statut: 'en_attente',
@@ -940,22 +995,23 @@ export class SchoolStore {
     SupabaseSyncService.syncDemandeAdmissionToSupabase({
       id: newReq.id,
       annee_scolaire: newReq.anneeScolaire || CURRENT_SCHOOL_YEAR,
-      nom_enfant: newReq.nomEnfant,
-      prenom_enfant: newReq.prenomEnfant,
-      date_naissance: newReq.dateNaissance,
-      classe_demandee: newReq.classeDemandee,
-      nom_parent: newReq.nomParent,
-      telephone_parent: newReq.telephoneParent,
-      email_parent: newReq.emailParent,
+      nom_enfant: newReq.nomEnfant.slice(0, 100),
+      prenom_enfant: newReq.prenomEnfant.slice(0, 100),
+      date_naissance: newReq.dateNaissance || '2018-01-01',
+      classe_demandee: newReq.classeDemandee.slice(0, 50),
+      nom_parent: newReq.nomParent.slice(0, 150),
+      telephone_parent: newReq.telephoneParent.slice(0, 50),
+      email_parent: newReq.emailParent ? newReq.emailParent.slice(0, 150) : undefined,
       adresse_domicile: newReq.adresse,
       est_nouvel_eleve: newReq.estNouveauTransfert,
-      etablissement_origine: newReq.etablissementOrigine,
+      etablissement_origine: newReq.etablissementOrigine ? newReq.etablissementOrigine.slice(0, 250) : undefined,
       decision_bulletin: newReq.decisionBulletin,
       moyenne_annuelle: newReq.moyenneAnnuelle,
       motif_venue: newReq.motifVenue,
-      description_motif: newReq.descriptionVenue || '',
-      bulletin_nom_fichier: newReq.bulletinNomFichier,
-      montant_don: newReq.montantDon,
+      description_motif: newReq.descriptionVenue?.trim() || "Demande d'inscription en ligne",
+      bulletin_nom_fichier: safeFileName,
+      observations_secretaire: encodeAdmissionObservations(newReq.notes, newReq.bulletinUrl),
+      montant_don: Number(newReq.montantDon) || 0,
       statut_admission: 'EN_ATTENTE',
     });
 
@@ -1005,7 +1061,8 @@ export class SchoolStore {
       classe_demandee: req.classeDemandee,
       nom_parent: req.nomParent,
       telephone_parent: req.telephoneParent,
-      description_motif: req.descriptionVenue || '',
+      description_motif: req.descriptionVenue?.trim() || "Demande d'inscription en ligne",
+      observations_secretaire: encodeAdmissionObservations(req.notes, req.bulletinUrl),
       statut_admission: 'ACCEPTE',
       matricule_attribue: student.matricule,
       date_traitement: req.dateTraitement,
@@ -1043,7 +1100,8 @@ export class SchoolStore {
         classe_demandee: req.classeDemandee,
         nom_parent: req.nomParent,
         telephone_parent: req.telephoneParent,
-        description_motif: req.descriptionVenue || '',
+        description_motif: req.descriptionVenue?.trim() || "Demande d'inscription en ligne",
+        observations_secretaire: encodeAdmissionObservations(req.notes, req.bulletinUrl),
         statut_admission: 'REFUSE',
         motif_refus: req.motifRefus,
         date_traitement: req.dateTraitement,
@@ -1065,7 +1123,7 @@ export class SchoolStore {
   static getAuditLogs(): AuditLog[] {
     if (typeof window === 'undefined') return [];
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
+      const stored = safeGetItem(STORAGE_KEYS.AUDIT_LOGS);
       if (stored) return JSON.parse(stored);
     } catch {
       // fallback
@@ -1075,7 +1133,7 @@ export class SchoolStore {
 
   static saveAuditLogs(logs: AuditLog[]) {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs));
+      safeSetItem(STORAGE_KEYS.AUDIT_LOGS, logs);
       notifyListeners();
     }
   }

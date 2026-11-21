@@ -218,23 +218,23 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   return (
     <div className="min-h-screen pb-16">
       {/* Hero Banner */}
-      <section className="bg-gradient-to-b from-emerald-900 via-emerald-800 to-slate-900 text-white pt-10 pb-16 px-4 sm:px-6 relative overflow-hidden">
+      <section className="bg-gradient-to-b from-emerald-900 via-emerald-800 to-slate-900 text-white pt-7 pb-12 sm:pt-10 sm:pb-16 px-4 sm:px-6 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none"></div>
         <div className="max-w-5xl mx-auto relative z-10 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-700/50 border border-emerald-500/40 text-emerald-200 text-xs font-semibold mb-4">
-            <Sparkles className="w-3.5 h-3.5" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-700/50 border border-emerald-500/40 text-emerald-200 text-[11px] sm:text-xs font-semibold mb-3 sm:mb-4">
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
             <span>Portail Officiel des Familles · Rentrée {CURRENT_SCHOOL_YEAR}</span>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white mb-8 max-w-3xl mx-auto" style={{ textWrap: 'balance' }}>
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white mb-6 sm:mb-8 max-w-3xl mx-auto leading-tight" style={{ textWrap: 'balance' }}>
             Réglez la scolarité et réinscrivez vos enfants en ligne en toute sérénité
           </h1>
 
-          {/* Action Shortcut for parents */}
-          <div className="flex flex-wrap items-center justify-center gap-3">
+          {/* Action Shortcut for parents: clean 2x2 grid on mobile, inline flex on desktop */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3 max-w-md sm:max-w-none mx-auto">
             <button
               onClick={() => setActiveTab('paiement')}
-              className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm ${
+              className={`w-full sm:w-auto px-3 sm:px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm flex items-center justify-center text-center ${
                 activeTab === 'paiement'
                   ? 'bg-white text-slate-900 shadow-lg'
                   : 'bg-emerald-700/60 hover:bg-emerald-700 text-white border border-emerald-500/30'
@@ -244,7 +244,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('inscription')}
-              className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm ${
+              className={`w-full sm:w-auto px-3 sm:px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm flex items-center justify-center text-center ${
                 activeTab === 'inscription'
                   ? 'bg-white text-slate-900 shadow-lg'
                   : 'bg-emerald-700/60 hover:bg-emerald-700 text-white border border-emerald-500/30'
@@ -254,29 +254,29 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('messages')}
-              className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm inline-flex items-center gap-2 ${
+              className={`w-full sm:w-auto px-3 sm:px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm inline-flex items-center justify-center gap-1.5 ${
                 activeTab === 'messages'
                   ? 'bg-white text-slate-900 shadow-lg'
                   : 'bg-emerald-700/60 hover:bg-emerald-700 text-white border border-emerald-500/30'
               }`}
             >
-              <Mail className="w-3.5 h-3.5" />
+              <Mail className="w-3.5 h-3.5 shrink-0" />
               <span>Messages</span>
               {unreadMessages.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold leading-none">
+                <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold leading-none">
                   {unreadMessages.length}
                 </span>
               )}
             </button>
             <button
               onClick={() => setActiveTab('tarifs')}
-              className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm ${
+              className={`w-full sm:w-auto px-3 sm:px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm flex items-center justify-center text-center ${
                 activeTab === 'tarifs'
                   ? 'bg-white text-slate-900 shadow-lg'
                   : 'bg-emerald-700/60 hover:bg-emerald-700 text-white border border-emerald-500/30'
               }`}
             >
-              Grille Tarifaire {CURRENT_SCHOOL_YEAR}
+              Grille Tarifaire
             </button>
           </div>
         </div>
@@ -660,18 +660,18 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
 
               {/* Right Column: Checkout Form (Mobile Money with OTP verification) */}
               <div className="lg:col-span-7">
-                <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
+                <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-7 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4 mb-5">
                     <div>
                       <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
                         Étape 2 : Règlement Sécurisé avec OTP
                       </span>
-                      <h2 className="text-lg font-bold text-slate-900">
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900">
                         Paiement Mobile Money (Burkina Faso)
                       </h2>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                      <ShieldCheck className="w-4 h-4" />
+                    <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 self-start sm:self-auto shrink-0">
+                      <ShieldCheck className="w-4 h-4 shrink-0" />
                       <span>Validation Interactive OTP</span>
                     </div>
                   </div>
@@ -776,7 +776,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
 
                       {/* Amount Selection */}
                       <div>
-                        <div className="flex items-center justify-between mb-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
                           <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
                             2. Montant à verser (FCFA)
                           </label>
@@ -788,7 +788,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                         </div>
 
                         {/* Quick preset buttons */}
-                        <div className="flex flex-wrap gap-2 mb-2.5">
+                        <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 mb-2.5">
                           {[25000, 50000, 75000].map((preset) => (
                             <button
                               key={preset}
@@ -797,7 +797,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                                 setMontant(preset);
                                 setCustomMontant(preset.toString());
                               }}
-                              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+                              className={`px-2 sm:px-3 py-2 sm:py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer text-center ${
                                 customMontant === preset.toString()
                                   ? 'bg-slate-900 text-white border-slate-900'
                                   : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
@@ -813,7 +813,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                                 setMontant(resteAPayer);
                                 setCustomMontant(resteAPayer.toString());
                               }}
-                              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+                              className={`col-span-3 sm:col-span-1 px-3 py-2 sm:py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer text-center ${
                                 customMontant === resteAPayer.toString()
                                   ? 'bg-emerald-700 text-white border-emerald-700'
                                   : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
@@ -845,23 +845,23 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                         </div>
 
                         {/* Optional Donation / Contribution */}
-                        <div className="mt-3 p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
+                        <div className="mt-3 p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
                             <span className="font-semibold text-purple-950 flex items-center gap-1">
-                              <HeartHandshake className="w-3.5 h-3.5 text-purple-700" />
-                              Ajouter un Don pour les Œuvres Scolaires
+                              <HeartHandshake className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                              <span>Don pour les Œuvres Scolaires</span>
                             </span>
                             <span className="text-[11px] text-purple-700 font-mono font-bold">
                               {montantDon > 0 ? `+${montantDon.toLocaleString('fr-FR')} F` : 'Aucun don'}
                             </span>
                           </div>
-                          <div className="flex flex-wrap items-center gap-1.5">
+                          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5">
                             {[0, 2000, 5000, 10000].map((d) => (
                               <button
                                 key={d}
                                 type="button"
                                 onClick={() => setMontantDon(d)}
-                                className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+                                className={`px-2.5 py-1.5 sm:py-1 text-xs font-semibold rounded-lg border transition-colors cursor-pointer text-center ${
                                   montantDon === d
                                     ? 'bg-purple-800 text-white border-purple-800'
                                     : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-100/50'
@@ -993,13 +993,13 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
 
         {/* TAB 3: GRILLE DES TARIFS OFFICIELS DYNAMIQUES */}
         {activeTab === 'tarifs' && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm max-w-4xl mx-auto space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-8 shadow-sm max-w-4xl mx-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>
                 <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block mb-1">
                   Année Scolaire {CURRENT_SCHOOL_YEAR}
                 </span>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
                   Grille Officielle des Frais de Scolarité
                 </h2>
                 <p className="text-xs text-slate-600 mt-1">
@@ -1007,14 +1007,14 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                 </p>
               </div>
 
-              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold shrink-0">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold shrink-0 self-start sm:self-auto">
                 <Coins className="w-4 h-4 text-emerald-600" />
                 <span>Synchronisé en direct</span>
               </div>
             </div>
 
-            <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
-              <table className="w-full text-left border-collapse">
+            <div className="border border-slate-200 rounded-xl overflow-x-auto text-xs">
+              <table className="w-full min-w-[540px] text-left border-collapse">
                 <thead className="bg-slate-100 text-slate-700 uppercase font-semibold text-[11px]">
                   <tr>
                     <th className="py-3 px-4">Cycle & Classes</th>

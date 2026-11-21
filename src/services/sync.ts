@@ -109,10 +109,16 @@ export class SyncService {
         const cloudDemandes: AdmissionRequest[] = demandesRaw.map(Mappers.demandeFromSupabase);
         const locales = SchoolStore.getAdmissions();
         
-        // Fusionner en conservant les plus récentes
+        // Fusionner en conservant les aperçus locaux si non présents côté cloud
         const map = new Map<string, AdmissionRequest>();
         locales.forEach((d) => map.set(d.id, d));
-        cloudDemandes.forEach((d) => map.set(d.id, d));
+        cloudDemandes.forEach((d) => {
+          const existing = map.get(d.id);
+          map.set(d.id, {
+            ...d,
+            bulletinUrl: d.bulletinUrl || existing?.bulletinUrl,
+          });
+        });
         
         const fusion = Array.from(map.values()).sort(
           (a, b) => new Date(b.dateDemande).getTime() - new Date(a.dateDemande).getTime()

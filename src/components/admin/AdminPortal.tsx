@@ -79,23 +79,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <a
               href="/edupay-scolarite-v5.zip"
               download="edupay-scolarite-v5.zip"
-              className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-colors flex items-center gap-1.5 cursor-pointer border border-emerald-200 shadow-sm"
+              className="flex-1 sm:flex-initial justify-center px-3 py-2 sm:py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-colors flex items-center gap-1.5 cursor-pointer border border-emerald-200 shadow-sm whitespace-nowrap"
               title="Télécharger l'archive ZIP complète pour GitHub ou Vercel"
             >
-              <Download className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Télécharger le code (.zip)</span>
+              <Download className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Télécharger (.zip)</span>
             </a>
 
             <button
               onClick={onSwitchToParent}
-              className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-200"
+              className="flex-1 sm:flex-initial justify-center px-3 py-2 sm:py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-200 whitespace-nowrap"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Tester l'interface Parent</span>
+              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+              <span>Tester Espace Parent</span>
             </button>
           </div>
         </div>

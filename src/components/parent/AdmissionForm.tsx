@@ -15,8 +15,53 @@ import {
   School,
   HelpCircle
 } from 'lucide-react';
-import { SchoolStore } from '../../services/store';
+import { SchoolStore, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { AdmissionRequest, AcademicDecision, TransferReason } from '../../types';
+
+async function compressImageToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Lecture impossible'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Image invalide'));
+      img.onload = () => {
+        const maxDim = 900;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(typeof reader.result === 'string' ? reader.result : '');
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        let output = canvas.toDataURL('image/jpeg', 0.65);
+        if (output.length > 130000) {
+          const smallCanvas = document.createElement('canvas');
+          const smallRatio = Math.min(650 / img.width, 650 / img.height, 1);
+          smallCanvas.width = Math.round(img.width * smallRatio);
+          smallCanvas.height = Math.round(img.height * smallRatio);
+          const smallCtx = smallCanvas.getContext('2d');
+          if (smallCtx) {
+            smallCtx.drawImage(img, 0, 0, smallCanvas.width, smallCanvas.height);
+            output = smallCanvas.toDataURL('image/jpeg', 0.5);
+          }
+        }
+        resolve(output);
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 interface AdmissionFormProps {
   onSuccess: (req: AdmissionRequest) => void;
@@ -43,6 +88,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
   const [bulletinFichier, setBulletinFichier] = useState<string>('bulletin_3eme_trimestre_officiel.pdf');
   const [bulletinUrl, setBulletinUrl] = useState<string>('');
   const [hasUploadedFile, setHasUploadedFile] = useState(false);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
 
   // Donation / Support funds
   const [montantDon, setMontantDon] = useState<number>(5000);
@@ -80,24 +126,41 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
     "D'",
   ];
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setBulletinFichier(file.name);
-      setHasUploadedFile(true);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    const file = e.target.files[0];
+    setBulletinFichier(file.name);
+    setHasUploadedFile(true);
+    setError('');
+    setIsProcessingFile(true);
 
-      const reader = new FileReader();
-      reader.onload = (uploadEvent) => {
-        if (uploadEvent.target?.result) {
-          setBulletinUrl(uploadEvent.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
+    try {
+      if (file.type.startsWith('image/')) {
+        const compressed = await compressImageToDataUrl(file);
+        setBulletinUrl(compressed);
+      } else if (file.size <= 160 * 1024) {
+        const reader = new FileReader();
+        reader.onload = (uploadEvent) => {
+          if (uploadEvent.target?.result) {
+            setBulletinUrl(uploadEvent.target.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        // Large PDF: keep filename metadata without overflowing mobile localStorage
+        setBulletinUrl('');
+      }
+    } catch {
+      setBulletinUrl('');
+    } finally {
+      setIsProcessingFile(false);
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+
     if (!nomEnfant.trim() || !prenomEnfant.trim() || !telephoneParent.trim() || !nomParent.trim()) {
       setError('Veuillez renseigner les champs obligatoires (nom, prénom, parent, téléphone).');
       return;
@@ -110,6 +173,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
 
     try {
       const donValue = Number(customDon) || 0;
+      const parsedMoyenne = moyenneAnnuelle.trim() === '' ? undefined : Number(moyenneAnnuelle);
 
       const newReq = SchoolStore.addAdmissionRequest({
         nomEnfant: nomEnfant.trim(),
@@ -124,9 +188,9 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
         estNouveauTransfert,
         etablissementOrigine: estNouveauTransfert ? etablissementOrigine.trim() || 'Non précisé' : 'Interne',
         decisionBulletin,
-        moyenneAnnuelle: Number(moyenneAnnuelle) || 0,
+        moyenneAnnuelle: parsedMoyenne !== undefined && !Number.isNaN(parsedMoyenne) ? parsedMoyenne : 0,
         motifVenue: estNouveauTransfert ? motifVenue : 'EXCELLENCE',
-        descriptionVenue: descriptionVenue.trim(),
+        descriptionVenue: descriptionVenue.trim() || 'Réinscription interne / Nouveau cycle',
         bulletinNomFichier: bulletinFichier,
         bulletinUrl: bulletinUrl || undefined,
         montantDon: donValue,
@@ -134,8 +198,9 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
 
       setSubmittedRequest(newReq);
       onSuccess(newReq);
-    } catch {
-      setError("Une erreur est survenue lors de l'enregistrement de la demande.");
+    } catch (err) {
+      console.error('[AdmissionForm] Erreur soumission:', err);
+      setError("Une erreur est survenue lors de l'enregistrement de la demande. Veuillez réessayer.");
     }
   };
 
@@ -214,12 +279,12 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm max-w-3xl mx-auto">
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-8 shadow-sm max-w-3xl mx-auto">
       <div className="mb-6">
         <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block mb-1">
-          Dossier Scolaire & Inscription · 2025 - 2026
+          Dossier Scolaire & Inscription · {CURRENT_SCHOOL_YEAR}
         </span>
-        <h2 className="text-2xl font-bold text-slate-900">
+        <h2 className="text-lg sm:text-2xl font-bold text-slate-900">
           Demande d'Admission avec Bulletin du 3ème Trimestre
         </h2>
         <p className="text-xs text-slate-600 mt-1 leading-relaxed">
@@ -301,12 +366,12 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
 
         {/* SECTION 2: Bulletin du 3ème Trimestre & Établissement d'Origine */}
         <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2.5">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-              <FileCheck className="w-4 h-4 text-emerald-700" />
-              2. Bulletin du 3ème Trimestre & Situation Scolaire
+              <FileCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>2. Bulletin du 3ème Trimestre & Situation Scolaire</span>
             </h3>
-            <span className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/70 px-2 py-0.5 rounded">
+            <span className="text-[11px] text-emerald-800 font-semibold bg-emerald-100/70 px-2.5 py-0.5 rounded self-start sm:self-auto shrink-0">
               Justificatif obligatoire
             </span>
           </div>
@@ -316,7 +381,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
             <label className="block text-xs font-semibold text-slate-700 mb-2">
               L'élève provient-il d'un autre établissement ?
             </label>
-            <div className="flex items-center gap-4 text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 text-xs">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="radio"
@@ -415,12 +480,16 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
                 <Upload className="w-3.5 h-3.5 text-slate-400" />
                 Fichier du bulletin du 3ème trimestre
               </label>
-              <label className="flex items-center justify-between px-3 py-1.5 border border-dashed border-slate-300 rounded-xl bg-white hover:bg-slate-50 cursor-pointer">
-                <span className="text-[11px] text-slate-600 truncate max-w-[200px]">
-                  {hasUploadedFile ? bulletinFichier : 'Téléverser le bulletin (PDF / Photo)'}
+              <label className="flex items-center justify-between gap-2 px-3 py-2 border border-dashed border-slate-300 rounded-xl bg-white hover:bg-slate-50 cursor-pointer">
+                <span className="text-[11px] text-slate-600 truncate min-w-0 flex-1">
+                  {isProcessingFile
+                    ? 'Optimisation de l\'image...'
+                    : hasUploadedFile
+                    ? bulletinFichier
+                    : 'Téléverser le bulletin (PDF / Photo)'}
                 </span>
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded shrink-0">
-                  {hasUploadedFile ? 'Fichier prêt' : 'Parcourir'}
+                  {isProcessingFile ? '...' : hasUploadedFile ? 'Fichier prêt' : 'Parcourir'}
                 </span>
                 <input
                   type="file"
@@ -450,12 +519,12 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
 
         {/* SECTION 3: Don & Contribution de soutien */}
         <div className="bg-purple-50/60 p-4 rounded-2xl border border-purple-200 space-y-3">
-          <div className="flex items-center justify-between border-b border-purple-200 pb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-purple-200 pb-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-purple-950 flex items-center gap-1.5">
-              <HeartHandshake className="w-4 h-4 text-purple-700" />
-              3. Argent pour Don & Contribution aux Œuvres Scolaires
+              <HeartHandshake className="w-4 h-4 text-purple-700 shrink-0" />
+              <span>3. Don & Contribution aux Œuvres Scolaires</span>
             </h3>
-            <span className="text-[10px] text-purple-800 font-semibold bg-purple-100 px-2 py-0.5 rounded">
+            <span className="text-[10px] text-purple-800 font-semibold bg-purple-100 px-2 py-0.5 rounded self-start sm:self-auto">
               Optionnel mais encouragé
             </span>
           </div>
@@ -464,26 +533,28 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
             Lors de l'inscription, les parents apportent une contribution pour tout ce qui est don (aide à la cantine scolaire, fonds pour la bibliothèque et infirmerie).
           </p>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {[0, 2000, 5000, 10000, 20000].map((val) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => {
-                  setMontantDon(val);
-                  setCustomDon(val.toString());
-                }}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
-                  customDon === val.toString()
-                    ? 'bg-purple-800 text-white border-purple-800'
-                    : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-100/50'
-                }`}
-              >
-                {val === 0 ? 'Sans don' : `${val.toLocaleString('fr-FR')} FCFA`}
-              </button>
-            ))}
+          <div className="space-y-2 sm:space-y-0 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+            <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
+              {[0, 2000, 5000, 10000, 20000].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => {
+                    setMontantDon(val);
+                    setCustomDon(val.toString());
+                  }}
+                  className={`px-2.5 py-2 sm:py-1.5 text-[11px] sm:text-xs font-semibold rounded-lg border transition-colors cursor-pointer text-center ${
+                    customDon === val.toString()
+                      ? 'bg-purple-800 text-white border-purple-800'
+                      : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-100/50'
+                  }`}
+                >
+                  {val === 0 ? 'Sans don' : `${val.toLocaleString('fr-FR')} F`}
+                </button>
+              ))}
+            </div>
 
-            <div className="relative max-w-[140px] ml-auto">
+            <div className="relative w-full sm:max-w-[140px] sm:ml-auto">
               <input
                 type="number"
                 step="500"
@@ -494,7 +565,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
                   setMontantDon(Number(e.target.value) || 0);
                 }}
                 placeholder="Montant libre"
-                className="w-full px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg border border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                className="w-full px-2.5 py-2 sm:py-1.5 text-xs font-mono font-bold rounded-lg border border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
               />
             </div>
           </div>

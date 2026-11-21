@@ -72,6 +72,11 @@ export const Mappers = {
 
   // --- DEMANDES D'ADMISSION ---
   demandeFromSupabase(row: any): AdmissionRequest {
+    const rawObs: string = row.observations_secretaire || '';
+    const imgMatch = rawObs.match(/\[BULLETIN_IMG\]([\s\S]*?)\[\/BULLETIN_IMG\]/);
+    const extractedBulletinUrl = imgMatch ? imgMatch[1] : undefined;
+    const cleanedNotes = rawObs.replace(/\[BULLETIN_IMG\][\s\S]*?\[\/BULLETIN_IMG\]\s*/g, '').trim();
+
     return {
       id: row.id,
       dateDemande: row.date_demande || new Date().toISOString(),
@@ -99,8 +104,9 @@ export const Mappers = {
       motifVenue: row.motif_venue || 'DEMENAGEMENT',
       descriptionVenue: row.description_motif || '',
       bulletinNomFichier: row.bulletin_nom_fichier || undefined,
+      bulletinUrl: extractedBulletinUrl,
       montantDon: Number(row.montant_don) || 0,
-      notes: row.observations_secretaire || undefined,
+      notes: cleanedNotes || undefined,
     };
   },
 
