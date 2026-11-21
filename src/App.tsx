@@ -12,11 +12,10 @@ import { AdminPortal } from './components/admin/AdminPortal';
 import { SecretaryLoginScreen } from './components/admin/SecretaryLoginScreen';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { ReceiptModal } from './components/ReceiptModal';
-import { SyncBanner } from './components/SyncBanner';
 import { SyncService } from './services/sync';
 import { clearSecretaryToken } from './services/supabaseClient';
 import { getReadMessageIds, buildParentMessages } from './components/parent/ParentMessagesTab';
-import { CheckCircle2, ShieldCheck, Copy, Check } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 /**
  * Détecte si l'URL courante correspond à l'accès administration réservé
@@ -68,7 +67,6 @@ export default function App() {
 
   // Toast notification
   const [liveToast, setLiveToast] = useState<string | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   const refreshAllData = useCallback(() => {
     setStudents(SchoolStore.getStudents());
@@ -234,49 +232,16 @@ export default function App() {
             setActiveTab={setActiveParentTab}
           />
         ) : (
-          /* SECRETARY / ADMIN INTERFACE: Only visible through the split admin URL */
-          <div>
-            {/* Helpful URL Reminder Banner in Admin for Secretary */}
-            <div className="no-print bg-slate-900 text-slate-300 text-xs px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>
-                  <strong>Espace Secrétariat privé :</strong> Les parents ont uniquement accès au lien public sans ces commandes.
-                </span>
-              </div>
-              <div className="flex items-center gap-2 font-mono text-[11px] bg-slate-800 px-3 py-1 rounded-lg">
-                <span className="text-slate-400">Lien direct secrétaire :</span>
-                <span className="text-emerald-300">{typeof window !== 'undefined' ? window.location.origin + '?espace=secretaire' : '?espace=secretaire'}</span>
-                <button
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      navigator.clipboard.writeText(window.location.origin + '?espace=secretaire');
-                      setCopiedLink(true);
-                      setTimeout(() => setCopiedLink(false), 2000);
-                    }
-                  }}
-                  className="ml-1 text-slate-400 hover:text-white cursor-pointer"
-                  title="Copier le lien secrétaire"
-                >
-                  {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Supabase Realtime synchronization status banner */}
-            <SyncBanner />
-
-            <AdminPortal
-              students={students}
-              payments={payments}
-              admissions={admissions}
-              activeTab={activeAdminTab}
-              setActiveTab={setActiveAdminTab}
-              onOpenReceipt={handleOpenReceipt}
-              onRefreshData={refreshAllData}
-              onSwitchToParent={handleAdminLogout}
-            />
-          </div>
+          <AdminPortal
+            students={students}
+            payments={payments}
+            admissions={admissions}
+            activeTab={activeAdminTab}
+            setActiveTab={setActiveAdminTab}
+            onOpenReceipt={handleOpenReceipt}
+            onRefreshData={refreshAllData}
+            onSwitchToParent={handleAdminLogout}
+          />
         )}
       </div>
 

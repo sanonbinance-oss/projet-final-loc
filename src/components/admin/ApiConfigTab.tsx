@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { PaymentService } from '../../services/paymentService';
 import {
-  VERCEL_DB_LABEL,
   SupabaseSyncService,
   SupabaseConnexionStatus,
 } from '../../services/supabaseClient';
@@ -74,45 +73,23 @@ export const ApiConfigTab: React.FC = () => {
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Top Banner */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
-              Architecture & Intégrations
-            </span>
-            <span className="text-xs font-semibold text-slate-500">
-              {VERCEL_DB_LABEL} & Passerelles Marchandes
-            </span>
-          </div>
-          <h2 className="text-lg font-bold text-slate-900">
-            Connexions Base de Données Vercel & Clés API
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Surveillez la liaison directe avec votre base PostgreSQL intégrée sur Vercel et paramétrez les passerelles Mobile Money.
-          </p>
-        </div>
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <h2 className="text-lg font-bold text-slate-900">
+          Passerelles de Paiement & Base de Données
+        </h2>
       </div>
 
-      {/* SECTION 1: VERCEL POSTGRESQL CONNECTION CARD */}
+      {/* SECTION 1: DATABASE CONNECTION CARD */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm shadow-sm">
               <Database className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-bold text-slate-900 text-sm">
-                  Base de Données {VERCEL_DB_LABEL}
-                </h3>
-                <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                  API Serveur Vercel (/api/db)
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">
-                Stockage centralisé des élèves, tarifs, demandes d'admission, bulletins et paiements
-              </p>
+              <h3 className="font-bold text-slate-900 text-sm">
+                Base de Données
+              </h3>
             </div>
           </div>
 
@@ -134,31 +111,8 @@ export const ApiConfigTab: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-colors cursor-pointer"
             >
               <Wrench className={`w-3.5 h-3.5 ${isInitializingDb ? 'animate-spin' : ''}`} />
-              <span>{isInitializingDb ? 'Initialisation...' : 'Vérifier / Créer les tables'}</span>
+              <span>{isInitializingDb ? 'Initialisation...' : 'Initialiser les tables'}</span>
             </button>
-          </div>
-        </div>
-
-        <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl text-xs text-blue-950 leading-relaxed">
-          <strong>Aucune clé API à copier :</strong> Lorsque vous reliez votre base <strong>Neon / Postgres</strong> dans l'onglet <strong>Storage</strong> de votre projet Vercel, Vercel injecte automatiquement <span className="font-mono font-bold">DATABASE_URL</span> / <span className="font-mono font-bold">POSTGRES_URL</span> côté serveur. Les tables SQL sont créées automatiquement au premier appel.
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
-            <span className="text-slate-500 block text-[11px] font-semibold">Moteur & Point de connexion :</span>
-            <div className="font-mono font-bold text-slate-900 text-xs flex items-center justify-between">
-              <span>/api/db (Vercel Serverless)</span>
-              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-sans font-bold">
-                Sécurisé
-              </span>
-            </div>
-          </div>
-
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
-            <span className="text-slate-500 block text-[11px] font-semibold">Variable détectée côté Vercel :</span>
-            <div className="font-mono font-semibold text-slate-700 text-xs">
-              {dbStatus?.envVarName ? dbStatus.envVarName : 'En attente de détection (DATABASE_URL / POSTGRES_URL)'}
-            </div>
           </div>
         </div>
 
@@ -249,9 +203,9 @@ export const ApiConfigTab: React.FC = () => {
                 className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
               />
               <div>
-                <span className="font-bold text-slate-900 block">Mode Démonstration & Bac à sable</span>
+                <span className="font-bold text-slate-900 block">Mode Sandbox</span>
                 <span className="text-[11px] text-slate-500 leading-relaxed block mt-0.5">
-                  Validation manuelle par la secrétaire après saisie du code OTP Orange Money. Aucun prélèvement bancaire automatique.
+                  Validation manuelle par la secrétaire après saisie du code OTP.
                 </span>
               </div>
             </label>

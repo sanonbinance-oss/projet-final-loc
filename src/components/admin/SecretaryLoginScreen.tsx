@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Lock, ShieldCheck, KeyRound, AlertCircle, ArrowLeft, CheckCircle2, Building, Sparkles } from 'lucide-react';
-import { DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
+import { Lock, KeyRound, AlertCircle, ArrowLeft, Building } from 'lucide-react';
+import { DEFAULT_SCHOOL_INFO } from '../../services/store';
 
 import { SupabaseSyncService } from '../../services/supabaseClient';
 
@@ -26,18 +26,13 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
     if (res.ok) {
       onSuccess();
     } else {
-      setError(res.error || "Code PIN incorrect. Le code d'accès par défaut est : 1234");
+      setError(res.error || 'Code PIN incorrect.');
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await verifyAndLogin(pin);
-  };
-
-  const handleQuickDemo = async () => {
-    setPin('1234');
-    await verifyAndLogin('1234');
   };
 
   return (
@@ -49,25 +44,16 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
           className="inline-flex items-center gap-2 text-xs font-semibold text-slate-300 hover:text-white bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded-lg border border-white/10 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Accès Public / Parents</span>
+          <span>Portail Parents</span>
         </button>
-
-        <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-mono bg-emerald-950/60 border border-emerald-500/30 px-3 py-1 rounded-full">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>Poste Secrétariat {CURRENT_SCHOOL_YEAR}</span>
-        </div>
       </div>
 
       {/* Center Auth Card */}
       <div className="max-w-md w-full mx-auto my-8 bg-white/95 backdrop-blur-md rounded-3xl p-8 sm:p-10 shadow-2xl border border-white/20 text-slate-900">
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-900 to-emerald-800 text-white flex items-center justify-center mx-auto mb-4 shadow-lg ring-4 ring-emerald-500/20">
             <Building className="w-8 h-8 text-emerald-300" />
           </div>
-
-          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 inline-block mb-2">
-            Espace Secrétariat & Intendance Privé
-          </span>
 
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
             Connexion Secrétariat
@@ -78,16 +64,9 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="leading-relaxed">
-              <strong>Accès réservé au personnel :</strong> Validation des dossiers d'admission, encaissement au guichet, modification des tarifs et import des élèves.
-            </div>
-          </div>
-
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
-              Code PIN Secrétariat (Défaut : 1234)
+              Code PIN Secrétariat
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -100,7 +79,7 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
                   setPin(e.target.value);
                   setError('');
                 }}
-                placeholder="Entrez votre code (1234)"
+                placeholder="Entrez votre code PIN"
                 autoFocus
                 className="w-full pl-10 pr-4 py-3 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 font-mono tracking-widest text-slate-900 bg-white"
               />
@@ -114,23 +93,14 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
             </div>
           )}
 
-          <div className="space-y-2.5 pt-1">
+          <div className="pt-1">
             <button
               type="submit"
               disabled={isVerifying}
               className="w-full py-3.5 px-4 text-xs font-bold uppercase tracking-wider rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white transition-all cursor-pointer shadow-lg shadow-emerald-700/25 text-center flex items-center justify-center gap-2"
             >
               <Lock className="w-4 h-4" />
-              <span>{isVerifying ? 'Vérification...' : "Ouvrir l'Espace Secrétaire"}</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isVerifying}
-              onClick={handleQuickDemo}
-              className="w-full py-2.5 px-4 text-xs font-bold rounded-xl text-emerald-800 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 border border-emerald-200 transition-colors cursor-pointer text-center"
-            >
-              Connexion Rapide (Code PIN : 1234)
+              <span>{isVerifying ? 'Vérification...' : 'Se connecter'}</span>
             </button>
           </div>
         </form>

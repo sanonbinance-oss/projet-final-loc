@@ -266,9 +266,6 @@ export const ParentMessagesTab: React.FC<ParentMessagesTabProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-600 mt-1">
-                Consultez ici les réponses officielles de l'administration concernant vos demandes de place (dossiers validés ou refusés avec motif) et vos paiements.
-              </p>
             </div>
           </div>
 
@@ -360,11 +357,8 @@ export const ParentMessagesTab: React.FC<ParentMessagesTabProps> = ({
             <Inbox className="w-6 h-6" />
           </div>
           <h3 className="text-sm font-bold text-slate-900">
-            Aucun message pour ce filtre
+            Aucune notification disponible
           </h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Lorsque le secrétariat examinera votre bulletin et répondra à votre demande de place (validation ou refus avec motif), la notification officielle apparaîtra instantanément ici.
-          </p>
           <button
             onClick={onGoToAdmission}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer"

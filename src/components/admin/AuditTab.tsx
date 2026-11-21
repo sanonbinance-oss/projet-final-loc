@@ -213,16 +213,9 @@ export const AuditTab: React.FC<AuditTabProps> = ({ onRefresh }) => {
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 text-xs font-semibold mb-3">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              Traçabilité Réglementaire & Sécurité Vercel PostgreSQL
-            </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-              Journal d'Audit & Historique des Actions
+              Journal d'Audit
             </h1>
-            <p className="mt-2 text-slate-300 text-sm leading-relaxed">
-              Toutes les opérations sensibles sont consignées de manière infalsifiable : connexions au secrétariat, révisions de barèmes tarifaires, suppressions d'élèves, validations des dossiers parents et encaissements de caisse.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">

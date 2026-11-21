@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  ShieldCheck, 
   Smartphone, 
   Clock, 
   RotateCw, 
   AlertCircle, 
-  CheckCircle2, 
   X, 
   KeyRound,
   Lock,
@@ -274,12 +272,9 @@ export const PaymentOtpModal: React.FC<PaymentOtpModalProps> = ({
           </div>
 
           {/* Instructions */}
-          <div className="text-center space-y-1">
+          <div className="text-center">
             <p className="text-xs font-semibold text-slate-800">
-              Veuillez valider la transaction sur votre téléphone
-            </p>
-            <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-              Entrez le code de confirmation (OTP ou référence reçu par SMS) ci-dessous pour autoriser le prélèvement.
+              Entrez le code de confirmation à 6 chiffres
             </p>
           </div>
 
@@ -343,7 +338,7 @@ export const PaymentOtpModal: React.FC<PaymentOtpModalProps> = ({
           <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-900 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
               <KeyRound className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-              <span>Code test simulateur : <strong className="font-mono text-amber-950 font-bold">{simulatedReceivedCode}</strong></span>
+              <span>Code de validation : <strong className="font-mono text-amber-950 font-bold">{simulatedReceivedCode}</strong></span>
             </div>
             <button
               type="button"

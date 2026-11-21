@@ -101,18 +101,9 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
       {/* Top Banner & KPI summary */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded border border-amber-200">
-              Étape Obligatoire Avant Paiement
-            </span>
-            <span className="text-xs text-slate-500">Contrôle Secrétariat</span>
-          </div>
           <h2 className="text-base font-bold text-slate-900">
-            Validation des Admissions & Bulletins du 3ème Trimestre
+            Demandes d'Admission & Bulletins
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Tant qu'une demande est en attente, le parent ne peut pas payer. Validez le dossier pour lui attribuer son matricule et débloquer son paiement.
-          </p>
         </div>
 
         {/* Filter & Refresh buttons */}
@@ -185,10 +176,10 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
             <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
             <div>
               <p className="font-bold text-emerald-950">
-                Élève inscrit avec succès dans la base scolaire !
+                Élève inscrit avec succès
               </p>
               <p className="text-emerald-800">
-                Matricule attribué : <strong className="font-mono">{acceptedStudent.matricule}</strong> pour {acceptedStudent.prenom} {acceptedStudent.nom} ({acceptedStudent.classe}).
+                Matricule : <strong className="font-mono">{acceptedStudent.matricule}</strong> · {acceptedStudent.prenom} {acceptedStudent.nom} ({acceptedStudent.classe})
               </p>
             </div>
           </div>
@@ -216,10 +207,10 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
             <XCircle className="w-5 h-5 text-rose-700 shrink-0" />
             <div>
               <p className="font-bold text-rose-950">
-                Dossier de {rejectedFeedback.childName} refusé — Message envoyé au parent !
+                Dossier de {rejectedFeedback.childName} refusé
               </p>
               <p className="text-rose-800">
-                Motif transmis dans l'onglet « Messages » du parent : <span className="italic">« {rejectedFeedback.motif} »</span>
+                Motif : <span className="italic">« {rejectedFeedback.motif} »</span>
               </p>
             </div>
           </div>

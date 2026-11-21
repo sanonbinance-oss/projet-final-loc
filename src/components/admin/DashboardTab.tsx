@@ -6,10 +6,7 @@ import {
   Clock, 
   ArrowUpRight, 
   Receipt, 
-  Sparkles,
-  Smartphone,
-  CheckCircle2,
-  AlertCircle
+  Smartphone
 } from 'lucide-react';
 import { AdmissionRequest, Payment, Student } from '../../types';
 import { PaymentService } from '../../services/paymentService';
@@ -59,25 +56,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Live Notice Banner for Secretary */}
+      {/* Header Bar */}
       <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-bold text-sm text-white">
-                Console de Contrôle en Direct · Secrétariat Général
-              </h2>
-              <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                Synchronisé
-              </span>
-            </div>
-            <p className="text-xs text-slate-300 mt-0.5">
-              Toutes les demandes de places et les règlements Mobile Money des parents s'actualisent ici sans recharger la page.
-            </p>
-          </div>
+        <div>
+          <h2 className="font-bold text-base text-white">
+            Tableau de Bord · Secrétariat Général
+          </h2>
         </div>
 
         <div className="flex items-center gap-2">
@@ -284,11 +268,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-bold text-slate-900 text-sm">
-                Derniers Versements Reçus en Direct
+                Derniers Versements
               </h3>
-              <p className="text-[11px] text-slate-500">
-                Chaque transaction génère une quittance téléchargeable et imprimable.
-              </p>
             </div>
             <button
               onClick={() => onNavigateToTab('transactions')}

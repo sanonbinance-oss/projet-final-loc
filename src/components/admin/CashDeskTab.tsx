@@ -132,11 +132,8 @@ export const CashDeskTab: React.FC<CashDeskTabProps> = ({
           </div>
           <div>
             <h2 className="text-base font-bold text-slate-900">
-              Guichet Caisse : Encaissement Scolarité & Dons
+              Guichet Caisse : Scolarité & Dons
             </h2>
-            <p className="text-xs text-slate-500">
-              Enregistrez le versement d'un parent en espèces (scolarité, bulletin du 3ème trimestre et dons), et imprimez directement son reçu certifié.
-            </p>
           </div>
         </div>
 
@@ -343,18 +340,9 @@ export const CashDeskTab: React.FC<CashDeskTabProps> = ({
         <div className="lg:col-span-7">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
-              <div>
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                  2. Enregistrement des Espèces
-                </span>
-                <h3 className="text-lg font-bold text-slate-900">
-                  Encaissement Scolarité & Dons
-                </h3>
-              </div>
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                <Banknote className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Règlement Direct Guichet</span>
-              </span>
+              <h3 className="text-lg font-bold text-slate-900">
+                Encaissement Scolarité & Dons
+              </h3>
             </div>
 
             {selectedStudent ? (
@@ -537,9 +525,6 @@ export const CashDeskTab: React.FC<CashDeskTabProps> = ({
                       Encaisser {totalRecuEnMains.toLocaleString('fr-FR')} FCFA & Imprimer le Reçu Officiel
                     </span>
                   </button>
-                  <p className="text-center text-[11px] text-slate-500 mt-2">
-                    ✓ La quittance officielle imprimée détaille le montant de scolarité et la part du don.
-                  </p>
                 </div>
               </form>
             ) : (

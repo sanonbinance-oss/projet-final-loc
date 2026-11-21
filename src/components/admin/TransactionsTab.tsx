@@ -103,11 +103,8 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-base font-bold text-slate-900">
-            Journal de Caisse & Rapprochement Financier
+            Journal de Caisse
           </h2>
-          <p className="text-xs text-slate-500">
-            Contrôle des versements Mobile Money (Orange Money, Moov) et encaissements espèces au guichet.
-          </p>
         </div>
 
         <button
@@ -128,15 +125,9 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({
                 <AlertTriangle className="w-5 h-5 text-slate-950" />
               </div>
               <div>
-                <h3 className="text-sm font-extrabold text-amber-950 flex items-center gap-2">
-                  <span>Versements Mobile Money en attente de vérification ({pendingMobilePayments.length})</span>
-                  <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full text-[11px] font-mono">
-                    Autorisation Caisse Requise
-                  </span>
+                <h3 className="text-sm font-extrabold text-amber-950">
+                  Versements Mobile Money en attente ({pendingMobilePayments.length})
                 </h3>
-                <p className="text-xs text-amber-900 mt-0.5">
-                  Le parent a validé son code OTP sur son téléphone. <strong>Vérifiez la réception effective du SMS sur le téléphone de l'école (+226 70 00 11 22)</strong> avant de débloquer le reçu officiel.
-                </p>
               </div>
             </div>
           </div>

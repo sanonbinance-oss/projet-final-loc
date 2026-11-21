@@ -4,21 +4,15 @@ import {
   Plus, 
   Edit2, 
   Trash2, 
-  Save, 
   CheckCircle2, 
   RotateCcw, 
-  HelpCircle,
-  TrendingUp,
   GraduationCap,
-  Calendar,
   X,
   Wrench,
-  BookOpen,
-  CloudCheck
+  BookOpen
 } from 'lucide-react';
 import { TuitionTariff } from '../../types';
 import { SchoolStore, CURRENT_SCHOOL_YEAR, PREVIOUS_SCHOOL_YEAR, DEFAULT_TARIFS_2027_2028 } from '../../services/store';
-import { VERCEL_DB_LABEL } from '../../services/supabaseClient';
 
 export const TarifsTab: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<string>(CURRENT_SCHOOL_YEAR);
@@ -78,7 +72,7 @@ export const TarifsTab: React.FC = () => {
         fraisInscription: Number(formData.fraisInscription) || 0,
         fraisAnnexes: Number(formData.fraisAnnexes) || 0,
       });
-      setNotification(`Tarif pour « ${formData.niveau} » mis à jour et synchronisé avec Vercel PostgreSQL.`);
+      setNotification(`Tarif pour « ${formData.niveau} » mis à jour.`);
     } else {
       SchoolStore.addTariff({
         anneeScolaire: selectedYear,
@@ -137,25 +131,12 @@ export const TarifsTab: React.FC = () => {
       {/* Top Banner & Actions */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-              Paramétrage Institutionnel
-            </span>
-            <span className="text-xs text-slate-500 font-medium">Session active :</span>
-            <span className="text-xs font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
-              {selectedYear}
-            </span>
-            <span className="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              {VERCEL_DB_LABEL}
-            </span>
-          </div>
+          <span className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded inline-block mb-1.5">
+            Session {selectedYear}
+          </span>
           <h2 className="text-xl font-extrabold text-slate-900">
-            Gestion des Tarifs de Scolarité (Collège, Lycée & Technique)
+            Grille des Tarifs de Scolarité
           </h2>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Ajustez les montants pour l'enseignement général et les filières techniques (Bac Pro 1 & 2, BEP 1 & 2, C', D'). Les modifications sont instantanément appliquées au portail parent et au guichet.
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
@@ -470,7 +451,7 @@ export const TarifsTab: React.FC = () => {
                   type="submit"
                   className="px-5 py-2 text-white font-bold bg-emerald-700 hover:bg-emerald-600 rounded-xl shadow-sm cursor-pointer transition-colors"
                 >
-                  Enregistrer & Synchroniser
+                  Enregistrer
                 </button>
               </div>
             </form>

@@ -4,18 +4,13 @@ import {
   Smartphone, 
   CreditCard, 
   CheckCircle, 
-  ShieldCheck, 
   Clock, 
   Receipt, 
   User, 
-  BookOpen, 
   ArrowRight, 
   AlertCircle,
-  HelpCircle,
   Sparkles,
-  Printer,
   HeartHandshake,
-  Coins,
   GraduationCap,
   RotateCw,
   Mail,
@@ -361,7 +356,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                       Paiement de {lastCompletedPayment.montant.toLocaleString('fr-FR')} FCFA validé avec succès !
                     </h4>
                     <p className="text-xs text-emerald-800">
-                      Réf Quittance : <span className="font-mono font-bold">{lastCompletedPayment.reference}</span> · La comptabilité a reçu la notification instantanée.
+                      Réf Quittance : <span className="font-mono font-bold">{lastCompletedPayment.reference}</span>
                     </p>
                   </div>
                 </div>
@@ -377,52 +372,33 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
 
             {/* Pending Mobile Money Secretary Verification Banner */}
             {pendingVerificationPayment && (
-              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-6 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div className="flex items-start gap-3.5">
-                  <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
-                    <Clock className="w-6 h-6 animate-spin text-white" style={{ animationDuration: '4s' }} />
+              <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+                    <Clock className="w-5 h-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-black uppercase tracking-wider">
-                        Étape 2 / 2 · En attente de validation secrétariat
+                      <span className="text-xs font-bold text-amber-900">
+                        Paiement en attente de validation
                       </span>
-                      <span className="text-xs text-amber-800 font-mono font-bold">
-                        Réf: {pendingVerificationPayment.reference}
+                      <span className="text-xs text-amber-800 font-mono">
+                        · Réf: {pendingVerificationPayment.reference}
                       </span>
                     </div>
-                    <h4 className="font-extrabold text-amber-950 text-base mt-1">
-                      Paiement de {pendingVerificationPayment.montant.toLocaleString('fr-FR')} FCFA transmis au secrétariat
-                    </h4>
-                    <p className="text-xs text-amber-900 mt-1 max-w-2xl leading-relaxed">
-                      Code OTP / Réf mobile saisi : <span className="font-mono font-bold text-amber-950 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">{pendingVerificationPayment.codeOtp || 'Saisi'}</span>
-                      <br />
-                      La secrétaire vérifie actuellement la réception effective du versement sur le numéro officiel de l'école (<strong>+226 70 00 11 22</strong>). Dès confirmation par le secrétariat, <strong>votre reçu officiel se débloquera immédiatement</strong> !
+                    <p className="text-xs text-amber-900 mt-1">
+                      Montant : <strong>{pendingVerificationPayment.montant.toLocaleString('fr-FR')} FCFA</strong> · Code OTP : <span className="font-mono font-bold">{pendingVerificationPayment.codeOtp || 'Saisi'}</span>
                     </p>
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => void SyncService.synchroniserMaintenant()}
-                    className="w-full sm:w-auto px-3.5 py-2.5 text-xs font-bold rounded-xl bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
-                    title="Vérifier maintenant si la secrétaire a validé le paiement"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                    <span>Actualiser</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      SchoolStore.validateMobileMoneyPayment(pendingVerificationPayment.id, 'Secrétaire Démo');
-                    }}
-                    className="w-full sm:w-auto px-4 py-2.5 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-700 text-white transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
-                    title="Simuler la validation par la secrétaire sans changer d'onglet"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Tester la Validation Secrétaire</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => void SyncService.synchroniserMaintenant()}
+                  className="w-full sm:w-auto px-3.5 py-2 text-xs font-bold rounded-xl bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Actualiser</span>
+                </button>
               </div>
             )}
 
@@ -452,8 +428,8 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
               <div className="lg:col-span-5 space-y-4">
                 {/* Search Box */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                    Étape 1 : Identifier l'Élève
+                  <span className="text-xs font-bold text-slate-700 block mb-2">
+                    Rechercher un élève
                   </span>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
@@ -503,9 +479,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                             </span>
                           </div>
                           <p className="text-[11px] text-amber-900 leading-relaxed">
-                            ⏳ <strong>Dossier d'inscription en cours d'examen par le secrétariat.</strong>
-                            <br />
-                            Votre demande avec bulletin a bien été transmise. Vous pourrez régler la scolarité dès que la secrétaire aura validé votre dossier.
+                            Dossier en cours d'examen. Vous pourrez régler la scolarité après validation.
                           </p>
                         </div>
                       ))}
@@ -688,19 +662,10 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
               {/* Right Column: Checkout Form (Mobile Money with OTP verification) */}
               <div className="lg:col-span-7">
                 <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-7 shadow-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4 mb-5">
-                    <div>
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                        Étape 2 : Règlement Sécurisé avec OTP
-                      </span>
-                      <h2 className="text-base sm:text-lg font-bold text-slate-900">
-                        Paiement Mobile Money (Burkina Faso)
-                      </h2>
-                    </div>
-                    <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 self-start sm:self-auto shrink-0">
-                      <ShieldCheck className="w-4 h-4 shrink-0" />
-                      <span>Validation Interactive OTP</span>
-                    </div>
+                  <div className="border-b border-slate-100 pb-4 mb-5">
+                    <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                      Paiement Mobile Money
+                    </h2>
                   </div>
 
                   {selectedStudent && resteAPayer === 0 ? (
@@ -920,9 +885,6 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                               className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                             />
                           </div>
-                          <span className="text-[10px] text-slate-400 mt-1 block">
-                            Le code de validation OTP sera envoyé à ce numéro
-                          </span>
                         </div>
 
                         <div>
@@ -945,7 +907,6 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                         </div>
                       </div>
 
-                      {/* Submit / Trigger OTP Modal Button */}
                       <button
                         type="submit"
                         disabled={!selectedStudent}
@@ -963,30 +924,13 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                       >
                         <CreditCard className="w-4 h-4" />
                         <span>
-                          {`Lancer le paiement OTP : ${(Number(customMontant || 0) + montantDon).toLocaleString('fr-FR')} FCFA${
+                          {`Payer ${(Number(customMontant || 0) + montantDon).toLocaleString('fr-FR')} FCFA${
                             montantDon > 0 ? ` (dont ${montantDon.toLocaleString('fr-FR')} F don)` : ''
                           }`}
                         </span>
                       </button>
-
-                      <p className="text-center text-[11px] text-slate-500">
-                        🔒 Paiement interactif vérifié par SMS OTP. La quittance officielle est générée instantanément.
-                      </p>
                     </form>
                   )}
-                </div>
-
-                {/* Info Callout for Cash Option */}
-                <div className="mt-4 p-4 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 flex items-start gap-3">
-                  <HelpCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-amber-950">
-                      Règlement au Guichet Scolaire en Espèces
-                    </h5>
-                    <p className="mt-0.5 text-amber-800 leading-relaxed">
-                      Le guichet de l'intendance est ouvert du lundi au vendredi de 07h30 à 15h30. La secrétaire saisit votre versement liquide et vous délivre sur-le-champ votre reçu papier officiel.
-                    </p>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1021,23 +965,13 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
         {/* TAB 3: GRILLE DES TARIFS OFFICIELS DYNAMIQUES */}
         {activeTab === 'tarifs' && (
           <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-8 shadow-sm max-w-4xl mx-auto space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-              <div>
-                <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block mb-1">
-                  Année Scolaire {CURRENT_SCHOOL_YEAR}
-                </span>
-                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
-                  Grille Officielle des Frais de Scolarité
-                </h2>
-                <p className="text-xs text-slate-600 mt-1">
-                  Tarification en vigueur configurée par le secrétariat pour l'ensemble des classes et cycles.
-                </p>
-              </div>
-
-              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold shrink-0 self-start sm:self-auto">
-                <Coins className="w-4 h-4 text-emerald-600" />
-                <span>Synchronisé en direct</span>
-              </div>
+            <div className="border-b border-slate-100 pb-4">
+              <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block mb-1">
+                Année Scolaire {CURRENT_SCHOOL_YEAR}
+              </span>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
+                Grille des Frais de Scolarité
+              </h2>
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-x-auto text-xs">

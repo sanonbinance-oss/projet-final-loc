@@ -1,7 +1,6 @@
 import React from 'react';
-import { Lock, GraduationCap, ArrowRight, ShieldCheck, LogOut, Coins, FileSpreadsheet, Mail } from 'lucide-react';
+import { GraduationCap, LogOut, Mail } from 'lucide-react';
 import { UserRole, ParentTab } from '../types';
-import { SyncBanner } from './SyncBanner';
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -118,12 +117,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Secrétariat & Contact
               </button>
             </>
-          ) : (
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
-              <span>Poste Direction & Secrétariat · Session 2027-2028</span>
-            </div>
-          )}
+          ) : null}
         </nav>
 
         {/* Zone 3: 1 primary action */}
@@ -138,9 +132,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           ) : (
             <div className="flex items-center gap-2 sm:gap-3">
-              <div className="hidden sm:block">
-                <SyncBanner minimal={true} />
-              </div>
               <button
                 onClick={onLogoutAdmin}
                 className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors whitespace-nowrap shrink-0 border border-rose-200 cursor-pointer"
@@ -148,7 +139,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span className="sm:hidden">Quitter</span>
-                <span className="hidden sm:inline">Verrouiller / Déconnexion</span>
+                <span className="hidden sm:inline">Déconnexion</span>
               </button>
             </div>
           )}
