@@ -14,6 +14,7 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { SyncBanner } from './components/SyncBanner';
 import { SyncService } from './services/sync';
+import { clearSecretaryToken } from './services/supabaseClient';
 import { getReadMessageIds, buildParentMessages } from './components/parent/ParentMessagesTab';
 import { CheckCircle2, ShieldCheck, Copy, Check } from 'lucide-react';
 
@@ -46,12 +47,7 @@ function checkIsAdminRoute(): boolean {
 export default function App() {
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() => checkIsAdminRoute());
 
-  const [adminAuthenticated, setAdminAuthenticated] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('edupay_admin_auth') === 'true';
-    }
-    return false;
-  });
+  const [adminAuthenticated, setAdminAuthenticated] = useState<boolean>(false);
 
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
 
@@ -141,8 +137,8 @@ export default function App() {
 
   const handleAdminLoginSuccess = () => {
     setAdminAuthenticated(true);
-    localStorage.setItem('edupay_admin_auth', 'true');
     setIsAdminRoute(true);
+    void SyncService.synchroniserMaintenant();
 
     SchoolStore.addAuditLog({
       typeAction: 'CONNEXION',
@@ -156,8 +152,8 @@ export default function App() {
   };
 
   const handleAdminLogout = () => {
+    clearSecretaryToken();
     setAdminAuthenticated(false);
-    localStorage.removeItem('edupay_admin_auth');
     setIsAdminRoute(false);
     // Clean URL to standard parent root
     if (typeof window !== 'undefined') {

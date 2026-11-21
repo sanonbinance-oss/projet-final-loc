@@ -1,59 +1,61 @@
-import React, { useState } from 'react';
-import { 
-  Key, 
-  ShieldCheck, 
-  CheckCircle, 
-  AlertCircle, 
-  ExternalLink, 
-  Save, 
-  Cpu, 
-  Lock,
-  Layers,
+import React, { useState, useEffect } from 'react';
+import {
+  Key,
+  ShieldCheck,
+  CheckCircle,
+  AlertCircle,
+  Save,
   Database,
-  CloudCheck,
   RotateCw,
-  Copy,
-  Check
+  Wrench,
 } from 'lucide-react';
 import { PaymentService } from '../../services/paymentService';
-import { 
-  SUPABASE_PROJECT_ID, 
-  SUPABASE_URL, 
-  SUPABASE_ANON_KEY, 
-  SupabaseSyncService, 
-  SupabaseConnexionStatus 
+import {
+  VERCEL_DB_LABEL,
+  SupabaseSyncService,
+  SupabaseConnexionStatus,
 } from '../../services/supabaseClient';
 
 export const ApiConfigTab: React.FC = () => {
   const [mode, setMode] = useState<'SIMULATION' | 'PRODUCTION'>(PaymentService.MODE);
 
-  // Supabase test state
-  const [isTestingSupabase, setIsTestingSupabase] = useState(false);
-  const [supabaseStatus, setSupabaseStatus] = useState<SupabaseConnexionStatus | null>(null);
-  const [copiedKey, setCopiedKey] = useState(false);
+  const [isTestingDb, setIsTestingDb] = useState(false);
+  const [isInitializingDb, setIsInitializingDb] = useState(false);
+  const [dbStatus, setDbStatus] = useState<SupabaseConnexionStatus | null>(null);
+  const [initFeedback, setInitFeedback] = useState<string | null>(null);
 
-  // Future keys state
   const [orangeApiKey, setOrangeApiKey] = useState('');
   const [orangeMerchantId, setOrangeMerchantId] = useState('');
-  
   const [moovApiKey, setMoovApiKey] = useState('');
   const [moovSecret, setMoovSecret] = useState('');
-
-  const [mtnApiKey, setMtnApiKey] = useState('');
-  const [mtnSubKey, setMtnSubKey] = useState('');
-
-  const [ligdicashToken, setLigdicashToken] = useState('');
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
-  const handleTestSupabase = async () => {
-    setIsTestingSupabase(true);
-    setSupabaseStatus(null);
+  const handleTestDb = async () => {
+    setIsTestingDb(true);
+    setDbStatus(null);
     const result = await SupabaseSyncService.testerConnexion();
-    setIsTestingSupabase(false);
-    setSupabaseStatus(result);
+    setIsTestingDb(false);
+    setDbStatus(result);
   };
+
+  const handleInitTables = async () => {
+    setIsInitializingDb(true);
+    setInitFeedback(null);
+    const res = await SupabaseSyncService.initialiserTables();
+    setIsInitializingDb(false);
+    if (res.ok) {
+      setInitFeedback(res.message || 'Tables SQL vérifiées et initialisées avec succès !');
+      await handleTestDb();
+    } else {
+      setInitFeedback(res.error || "Impossible d'initialiser les tables SQL.");
+    }
+  };
+
+  useEffect(() => {
+    void handleTestDb();
+  }, []);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +65,9 @@ export const ApiConfigTab: React.FC = () => {
   };
 
   const handleTestSimulation = () => {
-    setTestResult("Simulation réussie : Les serveurs Orange, Moov et MTN répondent avec succès en mode bac à sable (Sandbox).");
+    setTestResult(
+      'Simulation réussie : Les serveurs Orange, Moov et MTN répondent avec succès en mode bac à sable (Sandbox).'
+    );
     setTimeout(() => setTestResult(null), 5000);
   };
 
@@ -77,162 +81,124 @@ export const ApiConfigTab: React.FC = () => {
               Architecture & Intégrations
             </span>
             <span className="text-xs font-semibold text-slate-500">
-              Supabase PostgreSQL & Passerelles Marchandes
+              {VERCEL_DB_LABEL} & Passerelles Marchandes
             </span>
           </div>
           <h2 className="text-lg font-bold text-slate-900">
-            Connexions Base de Données & Clés API
+            Connexions Base de Données Vercel & Clés API
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Surveillez la liaison directe avec votre projet Supabase et paramétrez les passerelles Orange, Moov, MTN et LigdiCash.
+            Surveillez la liaison directe avec votre base PostgreSQL intégrée sur Vercel et paramétrez les passerelles Mobile Money.
           </p>
         </div>
       </div>
 
-      {/* SECTION 1: SUPABASE CLOUD CONNECTION CARD */}
+      {/* SECTION 1: VERCEL POSTGRESQL CONNECTION CARD */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shadow-sm">
-              <Database className="w-5 h-5 text-emerald-300" />
+            <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm shadow-sm">
+              <Database className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-bold text-slate-900 text-sm">
-                  Base de Données Cloud Supabase (PostgreSQL)
+                  Base de Données {VERCEL_DB_LABEL}
                 </h3>
                 <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                  Relié au projet
+                  API Serveur Vercel (/api/db)
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                Stockage persistant des élèves, tarifs de scolarité, inscriptions et quittances
+                Stockage centralisé des élèves, tarifs, demandes d'admission, bulletins et paiements
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleTestSupabase}
-            disabled={isTestingSupabase}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer shadow-sm shrink-0"
-          >
-            <RotateCw className={`w-3.5 h-3.5 ${isTestingSupabase ? 'animate-spin' : ''}`} />
-            <span>{isTestingSupabase ? 'Test en cours...' : 'Tester la connexion en direct'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleTestDb}
+              disabled={isTestingDb}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer shadow-sm"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isTestingDb ? 'animate-spin' : ''}`} />
+              <span>{isTestingDb ? 'Test en cours...' : 'Tester la connexion'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleInitTables}
+              disabled={isInitializingDb}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-colors cursor-pointer"
+            >
+              <Wrench className={`w-3.5 h-3.5 ${isInitializingDb ? 'animate-spin' : ''}`} />
+              <span>{isInitializingDb ? 'Initialisation...' : 'Vérifier / Créer les tables'}</span>
+            </button>
+          </div>
         </div>
 
-        {/* Credentials Summary Grid */}
+        <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl text-xs text-blue-950 leading-relaxed">
+          <strong>Aucune clé API à copier :</strong> Lorsque vous reliez votre base <strong>Neon / Postgres</strong> dans l'onglet <strong>Storage</strong> de votre projet Vercel, Vercel injecte automatiquement <span className="font-mono font-bold">DATABASE_URL</span> / <span className="font-mono font-bold">POSTGRES_URL</span> côté serveur. Les tables SQL sont créées automatiquement au premier appel.
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
-            <span className="text-slate-500 block text-[11px] font-semibold">Identifiant Projet (Reference ID) :</span>
+            <span className="text-slate-500 block text-[11px] font-semibold">Moteur & Point de connexion :</span>
             <div className="font-mono font-bold text-slate-900 text-xs flex items-center justify-between">
-              <span>{SUPABASE_PROJECT_ID}</span>
-              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-sans font-bold">Actif</span>
+              <span>/api/db (Vercel Serverless)</span>
+              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-sans font-bold">
+                Sécurisé
+              </span>
             </div>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
-            <span className="text-slate-500 block text-[11px] font-semibold">Point d'accès API REST (URL) :</span>
-            <div className="font-mono font-semibold text-slate-700 text-xs truncate">
-              {SUPABASE_URL}
+            <span className="text-slate-500 block text-[11px] font-semibold">Variable détectée côté Vercel :</span>
+            <div className="font-mono font-semibold text-slate-700 text-xs">
+              {dbStatus?.envVarName ? dbStatus.envVarName : 'En attente de détection (DATABASE_URL / POSTGRES_URL)'}
             </div>
           </div>
         </div>
 
-        {/* Public Key Display */}
-        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between gap-3 text-xs">
-          <div className="truncate">
-            <span className="text-slate-500 block text-[11px] font-semibold">Clé Publique (Publishable Key) :</span>
-            <span className="font-mono text-slate-700 text-[11px] truncate block max-w-lg">
-              {SUPABASE_ANON_KEY}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              navigator.clipboard.writeText(SUPABASE_ANON_KEY);
-              setCopiedKey(true);
-              setTimeout(() => setCopiedKey(false), 2000);
-            }}
-            className="p-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-600 cursor-pointer shrink-0"
-            title="Copier la clé"
+        {dbStatus && (
+          <div
+            className={`p-4 rounded-xl border text-xs space-y-2 ${
+              dbStatus.tablesExiste
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                : dbStatus.connecte
+                ? 'bg-blue-50 border-blue-300 text-blue-950'
+                : 'bg-rose-50 border-rose-300 text-rose-950'
+            }`}
           >
-            {copiedKey ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-          </button>
-        </div>
-
-        {/* Live Test Diagnostic Output */}
-        {supabaseStatus && (
-          <div className={`p-4 rounded-xl border text-xs space-y-2 animate-in fade-in ${
-            supabaseStatus.tablesExiste
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-              : supabaseStatus.connecte
-              ? 'bg-blue-50 border-blue-300 text-blue-950'
-              : 'bg-rose-50 border-rose-300 text-rose-950'
-          }`}>
             <div className="flex items-center gap-2 font-bold text-sm">
-              {supabaseStatus.tablesExiste ? (
+              {dbStatus.tablesExiste ? (
                 <>
                   <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                  <span>Connexion 100% Opérationnelle & Synchronisée !</span>
+                  <span>Base Vercel PostgreSQL 100% Opérationnelle !</span>
                 </>
-              ) : supabaseStatus.connecte ? (
+              ) : dbStatus.connecte ? (
                 <>
                   <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span>Projet Supabase Connecté & Authentifié avec Succès !</span>
+                  <span>Connexion établie, préparation des tables...</span>
                 </>
               ) : (
                 <>
                   <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-                  <span>Erreur de communication Supabase</span>
+                  <span>Liaison Vercel PostgreSQL non détectée ou en erreur</span>
                 </>
               )}
             </div>
-
-            <p className="leading-relaxed">
-              {supabaseStatus.message}
-            </p>
-
-            {!supabaseStatus.tablesExiste && supabaseStatus.connecte && (
-              <div className="bg-white/90 p-3 rounded-lg border border-blue-200 space-y-1.5 text-[11px]">
-                <p className="font-bold text-slate-900">
-                  Étape suivante pour activer la persistance dans Supabase :
-                </p>
-                <ol className="list-decimal list-inside text-slate-700 space-y-1">
-                  <li>Ouvrez votre console Supabase : <a href={`https://supabase.com/dashboard/project/${SUPABASE_PROJECT_ID}/sql`} target="_blank" rel="noreferrer" className="text-emerald-700 font-bold underline inline-flex items-center gap-1">Aller au SQL Editor <ExternalLink className="w-3 h-3" /></a></li>
-                  <li>Copiez le script SQL complet ci-dessous.</li>
-                  <li>Collez dans le SQL Editor et cliquez sur <strong>« Run »</strong>.</li>
-                </ol>
-              </div>
-            )}
+            <p className="leading-relaxed">{dbStatus.message}</p>
           </div>
         )}
 
-        {/* SQL SCHEMA CODE VIEWER / COPY TOOL */}
-        <div className="pt-2 border-t border-slate-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Database className="w-4 h-4 text-emerald-700" />
-              <span className="text-xs font-bold text-slate-800">
-                Script SQL de création des 6 tables (Supabase / PostgreSQL)
-              </span>
-            </div>
-            <a
-              href={`https://supabase.com/dashboard/project/${SUPABASE_PROJECT_ID}/sql/new`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs font-bold text-emerald-700 hover:text-emerald-800 underline inline-flex items-center gap-1"
-            >
-              <span>Ouvrir l'éditeur SQL Supabase</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
+        {initFeedback && (
+          <div className="p-3 rounded-xl bg-slate-100 border border-slate-300 text-slate-800 text-xs">
+            {initFeedback}
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Ce script crée les 6 tables en français (utilisateurs, tarifs_scolarite, eleves, inscriptions_annuelles, demandes_admission, paiements), les index trigrammes et les tarifs 2027-2028.
-          </p>
-        </div>
+        )}
       </div>
 
       {/* SECTION 2: MOBILE MONEY GATEWAYS */}
@@ -253,25 +219,28 @@ export const ApiConfigTab: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
-              mode === 'SIMULATION'
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                : 'bg-amber-50 text-amber-800 border-amber-300'
-            }`}>
+            <span
+              className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                mode === 'SIMULATION'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                  : 'bg-amber-50 text-amber-800 border-amber-300'
+              }`}
+            >
               {mode === 'SIMULATION' ? '● Mode Bac à Sable' : '● Mode Production'}
             </span>
           </div>
         </div>
 
-        {/* Mode Selector */}
         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs space-y-2">
           <span className="font-bold text-slate-800 block">Environnement d'exécution des paiements :</span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
-              mode === 'SIMULATION'
-                ? 'bg-white border-emerald-500 ring-2 ring-emerald-500/10 shadow-sm'
-                : 'bg-slate-100 border-slate-200'
-            }`}>
+            <label
+              className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
+                mode === 'SIMULATION'
+                  ? 'bg-white border-emerald-500 ring-2 ring-emerald-500/10 shadow-sm'
+                  : 'bg-slate-100 border-slate-200'
+              }`}
+            >
               <input
                 type="radio"
                 name="gateway_mode"
@@ -282,16 +251,18 @@ export const ApiConfigTab: React.FC = () => {
               <div>
                 <span className="font-bold text-slate-900 block">Mode Démonstration & Bac à sable</span>
                 <span className="text-[11px] text-slate-500 leading-relaxed block mt-0.5">
-                  Simulateur interactif avec validation par code OTP SMS réel. Aucun prélèvement bancaire effectif.
+                  Validation manuelle par la secrétaire après saisie du code OTP Orange Money. Aucun prélèvement bancaire automatique.
                 </span>
               </div>
             </label>
 
-            <label className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
-              mode === 'PRODUCTION'
-                ? 'bg-white border-emerald-500 ring-2 ring-emerald-500/10 shadow-sm'
-                : 'bg-slate-100 border-slate-200'
-            }`}>
+            <label
+              className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
+                mode === 'PRODUCTION'
+                  ? 'bg-white border-emerald-500 ring-2 ring-emerald-500/10 shadow-sm'
+                  : 'bg-slate-100 border-slate-200'
+              }`}
+            >
               <input
                 type="radio"
                 name="gateway_mode"
@@ -309,9 +280,7 @@ export const ApiConfigTab: React.FC = () => {
           </div>
         </div>
 
-        {/* Gateways Inputs Form */}
         <form onSubmit={handleSave} className="space-y-4 text-xs">
-          {/* Orange Money */}
           <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-white">
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-900 flex items-center gap-2">
@@ -345,7 +314,6 @@ export const ApiConfigTab: React.FC = () => {
             </div>
           </div>
 
-          {/* Moov Money */}
           <div className="border border-slate-200 rounded-xl p-4 space-y-3 bg-white">
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-900 flex items-center gap-2">

@@ -215,7 +215,7 @@ export const AuditTab: React.FC<AuditTabProps> = ({ onRefresh }) => {
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 text-xs font-semibold mb-3">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              Traçabilité Réglementaire & Sécurité Supabase
+              Traçabilité Réglementaire & Sécurité Vercel PostgreSQL
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
               Journal d'Audit & Historique des Actions

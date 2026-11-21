@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { TuitionTariff } from '../../types';
 import { SchoolStore, CURRENT_SCHOOL_YEAR, PREVIOUS_SCHOOL_YEAR, DEFAULT_TARIFS_2027_2028 } from '../../services/store';
-import { SUPABASE_PROJECT_ID } from '../../services/supabaseClient';
+import { VERCEL_DB_LABEL } from '../../services/supabaseClient';
 
 export const TarifsTab: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<string>(CURRENT_SCHOOL_YEAR);
@@ -78,7 +78,7 @@ export const TarifsTab: React.FC = () => {
         fraisInscription: Number(formData.fraisInscription) || 0,
         fraisAnnexes: Number(formData.fraisAnnexes) || 0,
       });
-      setNotification(`Tarif pour « ${formData.niveau} » mis à jour et synchronisé avec Supabase.`);
+      setNotification(`Tarif pour « ${formData.niveau} » mis à jour et synchronisé avec Vercel PostgreSQL.`);
     } else {
       SchoolStore.addTariff({
         anneeScolaire: selectedYear,
@@ -147,7 +147,7 @@ export const TarifsTab: React.FC = () => {
             </span>
             <span className="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Supabase : {SUPABASE_PROJECT_ID}
+              {VERCEL_DB_LABEL}
             </span>
           </div>
           <h2 className="text-xl font-extrabold text-slate-900">

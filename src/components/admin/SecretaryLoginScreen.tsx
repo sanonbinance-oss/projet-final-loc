@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Lock, ShieldCheck, KeyRound, AlertCircle, ArrowLeft, CheckCircle2, Building, Sparkles } from 'lucide-react';
 import { DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
 
+import { SupabaseSyncService } from '../../services/supabaseClient';
+
 interface SecretaryLoginScreenProps {
   onSuccess: () => void;
   onReturnToPublic: () => void;
@@ -13,22 +15,29 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
 }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
   const school = DEFAULT_SCHOOL_INFO;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pin === '1234' || pin === 'admin' || pin === 'secretaire') {
-      setError('');
+  const verifyAndLogin = async (candidatePin: string) => {
+    setIsVerifying(true);
+    setError('');
+    const res = await SupabaseSyncService.verifySecretaryPin(candidatePin);
+    setIsVerifying(false);
+    if (res.ok) {
       onSuccess();
     } else {
-      setError('Code PIN incorrect. Le code d\'accès par défaut est : 1234');
+      setError(res.error || "Code PIN incorrect. Le code d'accès par défaut est : 1234");
     }
   };
 
-  const handleQuickDemo = () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await verifyAndLogin(pin);
+  };
+
+  const handleQuickDemo = async () => {
     setPin('1234');
-    setError('');
-    onSuccess();
+    await verifyAndLogin('1234');
   };
 
   return (
@@ -108,16 +117,18 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
           <div className="space-y-2.5 pt-1">
             <button
               type="submit"
-              className="w-full py-3.5 px-4 text-xs font-bold uppercase tracking-wider rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white transition-all cursor-pointer shadow-lg shadow-emerald-700/25 text-center flex items-center justify-center gap-2"
+              disabled={isVerifying}
+              className="w-full py-3.5 px-4 text-xs font-bold uppercase tracking-wider rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white transition-all cursor-pointer shadow-lg shadow-emerald-700/25 text-center flex items-center justify-center gap-2"
             >
               <Lock className="w-4 h-4" />
-              <span>Ouvrir l'Espace Secrétaire</span>
+              <span>{isVerifying ? 'Vérification...' : "Ouvrir l'Espace Secrétaire"}</span>
             </button>
 
             <button
               type="button"
+              disabled={isVerifying}
               onClick={handleQuickDemo}
-              className="w-full py-2.5 px-4 text-xs font-bold rounded-xl text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer text-center"
+              className="w-full py-2.5 px-4 text-xs font-bold rounded-xl text-emerald-800 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 border border-emerald-200 transition-colors cursor-pointer text-center"
             >
               Connexion Rapide (Code PIN : 1234)
             </button>

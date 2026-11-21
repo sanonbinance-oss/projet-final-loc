@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Lock, ShieldCheck, X, KeyRound, AlertCircle } from 'lucide-react';
 
+import { SupabaseSyncService } from '../services/supabaseClient';
+
 interface AdminLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -14,26 +16,31 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Default PIN: 1234 or any non-empty demo password
-    if (pin === '1234' || pin === 'admin' || pin === 'secretaire') {
-      setError('');
+  const verifyAndLogin = async (candidatePin: string) => {
+    setIsVerifying(true);
+    setError('');
+    const res = await SupabaseSyncService.verifySecretaryPin(candidatePin);
+    setIsVerifying(false);
+    if (res.ok) {
       onSuccess();
       onClose();
     } else {
-      setError('Code d\'accès incorrect. Pour le test, utilisez le code : 1234');
+      setError(res.error || "Code d'accès incorrect. Pour le test, utilisez le code : 1234");
     }
   };
 
-  const handleQuickDemo = () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await verifyAndLogin(pin);
+  };
+
+  const handleQuickDemo = async () => {
     setPin('1234');
-    setError('');
-    onSuccess();
-    onClose();
+    await verifyAndLogin('1234');
   };
 
   return (
@@ -96,14 +103,16 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           <div className="pt-2 flex flex-col gap-2">
             <button
               type="submit"
-              className="w-full py-2.5 px-4 text-xs font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer shadow-sm text-center"
+              disabled={isVerifying}
+              className="w-full py-2.5 px-4 text-xs font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white transition-colors cursor-pointer shadow-sm text-center"
             >
-              Déverrouiller l'Espace Administration
+              {isVerifying ? 'Vérification...' : "Déverrouiller l'Espace Administration"}
             </button>
             <button
               type="button"
+              disabled={isVerifying}
               onClick={handleQuickDemo}
-              className="w-full py-2 px-4 text-xs font-medium rounded-lg text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer text-center"
+              className="w-full py-2 px-4 text-xs font-medium rounded-lg text-emerald-800 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 border border-emerald-200 transition-colors cursor-pointer text-center"
             >
               Connexion Rapide Démo (Code: 1234)
             </button>

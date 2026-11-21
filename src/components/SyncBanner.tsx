@@ -58,7 +58,7 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({ minimal = false }) => {
           >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <Database className="w-3 h-3 text-emerald-600" />
-            <span>Supabase En direct</span>
+            <span>Vercel DB En direct</span>
             <RefreshCw className="w-2.5 h-2.5 text-emerald-500 opacity-60 group-hover:opacity-100 group-hover:rotate-180 transition-all" />
           </button>
         )}
@@ -76,7 +76,7 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({ minimal = false }) => {
         <div className="flex items-start sm:items-center gap-2 min-w-0">
           <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
           <p className="break-words">
-            <span className="font-semibold">Liaison Supabase en pause :</span>{' '}
+            <span className="font-semibold">Liaison Vercel PostgreSQL interrompue :</span>{' '}
             {syncState.messageErreur || 'Impossible de joindre la base de données.'}{' '}
             {syncState.nbEnAttenteEnvoi ? `(${syncState.nbEnAttenteEnvoi} envoi(s) en attente) ` : ''}
             Les données restent enregistrées localement.
@@ -99,8 +99,8 @@ export const SyncBanner: React.FC<SyncBannerProps> = ({ minimal = false }) => {
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
         <Wifi className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
         <span className="truncate sm:whitespace-normal">
-          <strong className="text-white">Liaison Temps Réel Active :</strong> Synchronisé avec Supabase Cloud.
-          {syncState.nbEnAttenteEnvoi ? ` (${syncState.nbEnAttenteEnvoi} élément(s) en file d'envoi)` : ' Les demandes parents apparaissent instantanément côté secrétaire.'}
+          <strong className="text-white">Liaison Temps Réel Active :</strong> Synchronisé avec Vercel PostgreSQL.
+          {syncState.nbEnAttenteEnvoi ? ` (${syncState.nbEnAttenteEnvoi} élément(s) en file d'envoi)` : ' Les demandes parents apparaissent automatiquement côté secrétaire.'}
         </span>
         <span className="text-slate-400 hidden md:inline shrink-0">
           (Dernière màj : {formatLastSync(syncState.derniereSynchro)})

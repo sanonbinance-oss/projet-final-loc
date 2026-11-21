@@ -30,7 +30,7 @@ async function compressImageToDataUrl(file: File): Promise<string> {
       const img = new Image();
       img.onerror = () => reject(new Error('Image invalide'));
       img.onload = () => {
-        const maxDim = 900;
+        const maxDim = 700;
         let width = img.width;
         let height = img.height;
         if (width > maxDim || height > maxDim) {
@@ -47,16 +47,16 @@ async function compressImageToDataUrl(file: File): Promise<string> {
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        let output = canvas.toDataURL('image/jpeg', 0.65);
-        if (output.length > 130000) {
+        let output = canvas.toDataURL('image/jpeg', 0.55);
+        if (output.length > 65000) {
           const smallCanvas = document.createElement('canvas');
-          const smallRatio = Math.min(650 / img.width, 650 / img.height, 1);
+          const smallRatio = Math.min(480 / img.width, 480 / img.height, 1);
           smallCanvas.width = Math.round(img.width * smallRatio);
           smallCanvas.height = Math.round(img.height * smallRatio);
           const smallCtx = smallCanvas.getContext('2d');
           if (smallCtx) {
             smallCtx.drawImage(img, 0, 0, smallCanvas.width, smallCanvas.height);
-            output = smallCanvas.toDataURL('image/jpeg', 0.5);
+            output = smallCanvas.toDataURL('image/jpeg', 0.45);
           }
         }
         resolve(output);
@@ -189,7 +189,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
       const donValue = Math.max(0, Number(customDon) || 0);
       const parsedMoyenne = moyenneAnnuelle.trim() === '' ? undefined : Number(moyenneAnnuelle);
 
-      const res = await SchoolStore.addAdmissionRequestAsync({
+      const submitPromise = SchoolStore.addAdmissionRequestAsync({
         nomEnfant: nomEnfant.trim(),
         prenomEnfant: prenomEnfant.trim(),
         dateNaissance: dateNaissance || '2018-01-01',
@@ -210,13 +210,38 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
         montantDon: donValue,
       });
 
+      const timeoutGuard = new Promise<never>((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Le serveur Vercel PostgreSQL met trop de temps à répondre. La demande est sauvegardée localement sur cet appareil."
+              )
+            ),
+          12000
+        );
+      });
+
+      const res = await Promise.race([submitPromise, timeoutGuard]);
+
       setSubmittedRequest(res.request);
       setSyncStatus({ synced: res.synced, error: res.error });
       void SyncService.synchroniserMaintenant();
       onSuccess(res.request);
     } catch (err) {
       console.error('[AdmissionForm] Erreur soumission:', err);
-      setError("Une erreur est survenue lors de l'enregistrement de la demande. Veuillez réessayer.");
+      const localLatest = SchoolStore.getAdmissions()[0];
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Une erreur est survenue lors de l'enregistrement de la demande.";
+      if (localLatest && localLatest.nomEnfant === nomEnfant.trim() && localLatest.prenomEnfant === prenomEnfant.trim()) {
+        setSubmittedRequest(localLatest);
+        setSyncStatus({ synced: false, error: msg });
+        onSuccess(localLatest);
+      } else {
+        setError(msg);
+      }
     } finally {
       setIsSubmitting(false);
     }
