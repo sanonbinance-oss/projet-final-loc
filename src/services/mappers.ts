@@ -1,10 +1,5 @@
 import { Student, AdmissionRequest, Payment, TuitionTariff, AuditLog, PaymentStatus } from '../types';
 
-/**
- * Mappers bidirectionnels entre le schéma Supabase (snake_case)
- * et les modèles TypeScript de l'application (camelCase).
- */
-
 export const Mappers = {
   // --- ÉLÈVES ---
   eleveFromSupabase(row: any): Student {
@@ -18,6 +13,7 @@ export const Mappers = {
       anneeScolaire: row.annee_scolaire || '2027-2028',
       scolariteTotale: Number(row.scolarite_totale) || 0,
       montantPaye: Number(row.montant_paye) || 0,
+      parentCompteId: row.parent_compte_id || undefined,
       nomParent: row.nom_parent || '',
       telephoneParent: row.telephone_parent || '',
       emailParent: row.email_parent || undefined,
@@ -33,6 +29,7 @@ export const Mappers = {
       motifVenue: row.motif_venue || undefined,
       descriptionVenue: row.description_motif || undefined,
       bulletinNomFichier: row.bulletin_nom_fichier || undefined,
+      extraitNaissanceNomFichier: row.extrait_naissance_nom_fichier || undefined,
       montantDonTotal: Number(row.montant_don_total) || 0,
       anneeOrigine: row.annee_origine || undefined,
       classePrecedente: row.classe_precedente || undefined,
@@ -53,6 +50,7 @@ export const Mappers = {
       scolarite_totale: s.scolariteTotale,
       montant_paye: s.montantPaye || 0,
       montant_don_total: s.montantDonTotal || 0,
+      parent_compte_id: s.parentCompteId || null,
       nom_parent: s.nomParent,
       telephone_parent: s.telephoneParent,
       email_parent: s.emailParent || null,
@@ -67,6 +65,7 @@ export const Mappers = {
       motif_venue: s.motifVenue || null,
       description_motif: s.descriptionVenue || null,
       bulletin_nom_fichier: s.bulletinNomFichier || null,
+      extrait_naissance_nom_fichier: s.extraitNaissanceNomFichier || null,
       statut_inscription: s.statut || 'inscrit',
       date_inscription: s.dateInscription || new Date().toISOString().split('T')[0],
       date_modification: new Date().toISOString(),
@@ -77,13 +76,14 @@ export const Mappers = {
   demandeFromSupabase(row: any): AdmissionRequest {
     const rawObs: string = row.observations_secretaire || '';
     const imgMatch = rawObs.match(/\[BULLETIN_IMG\]([\s\S]*?)\[\/BULLETIN_IMG\]/);
-    const extractedBulletinUrl = imgMatch ? imgMatch[1] : undefined;
+    const extractedBulletinUrl = row.bulletin_url || (imgMatch ? imgMatch[1] : undefined);
     const cleanedNotes = rawObs.replace(/\[BULLETIN_IMG\][\s\S]*?\[\/BULLETIN_IMG\]\s*/g, '').trim();
 
     return {
       id: row.id,
       dateDemande: row.date_demande || new Date().toISOString(),
       anneeScolaire: row.annee_scolaire || '2027-2028',
+      parentCompteId: row.parent_compte_id || undefined,
       nomEnfant: row.nom_enfant || '',
       prenomEnfant: row.prenom_enfant || '',
       dateNaissance: row.date_naissance || '',
@@ -111,7 +111,9 @@ export const Mappers = {
       motifVenue: row.motif_venue || 'DEMENAGEMENT',
       descriptionVenue: row.description_motif || '',
       bulletinNomFichier: row.bulletin_nom_fichier || undefined,
-      bulletinUrl: extractedBulletinUrl,
+      bulletinUrl: extractedBulletinUrl || undefined,
+      extraitNaissanceNomFichier: row.extrait_naissance_nom_fichier || undefined,
+      extraitNaissanceUrl: row.extrait_naissance_url || undefined,
       montantDon: Number(row.montant_don) || 0,
       notes: cleanedNotes || undefined,
     };
@@ -129,6 +131,7 @@ export const Mappers = {
       id: d.id,
       date_demande: d.dateDemande || new Date().toISOString(),
       annee_scolaire: d.anneeScolaire || '2027-2028',
+      parent_compte_id: d.parentCompteId || null,
       nom_enfant: d.nomEnfant,
       prenom_enfant: d.prenomEnfant,
       date_naissance: d.dateNaissance || null,
@@ -144,6 +147,9 @@ export const Mappers = {
       motif_venue: d.motifVenue || 'DEMENAGEMENT',
       description_motif: d.descriptionVenue || "Demande d'inscription en ligne",
       bulletin_nom_fichier: d.bulletinNomFichier || null,
+      bulletin_url: d.bulletinUrl || null,
+      extrait_naissance_nom_fichier: d.extraitNaissanceNomFichier || null,
+      extrait_naissance_url: d.extraitNaissanceUrl || null,
       montant_don: d.montantDon || 0,
       statut_admission: statutUpper,
       matricule_attribue: d.matriculeAttribue || null,
@@ -172,6 +178,7 @@ export const Mappers = {
     return {
       id: row.id,
       reference: row.reference_quittance,
+      parentCompteId: row.parent_compte_id || undefined,
       studentId: row.eleve_id,
       studentMatricule: row.eleve_matricule,
       studentNom: row.nom_eleve,
@@ -184,6 +191,7 @@ export const Mappers = {
       encaissePar: row.encaisse_par,
       statut: mappedStatut,
       codeOtp: row.code_validation_otp || undefined,
+      qrSignature: row.qr_signature || undefined,
       motifRejetPaiement: motifRejet,
       nomPayeur: row.nom_payeur,
       telephonePayeur: row.telephone_payeur || undefined,
@@ -198,6 +206,7 @@ export const Mappers = {
       id: p.id,
       reference_quittance: p.reference,
       annee_scolaire: p.anneeScolaire || '2027-2028',
+      parent_compte_id: p.parentCompteId || null,
       eleve_id: p.studentId,
       eleve_matricule: p.studentMatricule,
       nom_eleve: p.studentNom,

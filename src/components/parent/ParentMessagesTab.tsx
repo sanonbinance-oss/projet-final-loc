@@ -14,8 +14,12 @@ import {
   School,
 } from 'lucide-react';
 import { AdmissionRequest, Payment, Student } from '../../types';
+import { SchoolStore } from '../../services/store';
+import { SyncService } from '../../services/sync';
 
-const READ_MESSAGES_STORAGE_KEY = 'edupay_parent_read_messages_v5';
+function getScopedReadStorageKey(): string {
+  return `edupay_parent_read_messages_v5__${SchoolStore.getScope()}`;
+}
 
 export type ParentMessageCategory =
   | 'ADMISSION_REFUSEE'
@@ -44,7 +48,7 @@ export interface ParentNotificationMessage {
 export function getReadMessageIds(): string[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(READ_MESSAGES_STORAGE_KEY);
+    const raw = localStorage.getItem(getScopedReadStorageKey());
     if (raw) {
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : [];
@@ -58,7 +62,7 @@ export function getReadMessageIds(): string[] {
 function saveReadMessageIds(ids: string[]) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(READ_MESSAGES_STORAGE_KEY, JSON.stringify(ids));
+    localStorage.setItem(getScopedReadStorageKey(), JSON.stringify(ids));
   } catch {
     // ignore storage quota error on mobile private browsing
   }
@@ -234,13 +238,19 @@ export const ParentMessagesTab: React.FC<ParentMessagesTabProps> = ({
     });
   }, [allMessages, filter, searchQuery, readSet]);
 
-  const handlePayForAccepted = (msg: ParentNotificationMessage) => {
+  const handlePayForAccepted = async (msg: ParentNotificationMessage) => {
     markMessageAsRead(msg.id);
-    const matchingStudent = students.find(
-      (s) =>
-        (msg.matriculeAttribue && s.matricule === msg.matriculeAttribue) ||
-        `${s.prenom} ${s.nom}`.toLowerCase() === msg.childName.toLowerCase()
-    );
+    const findMatch = (list: Student[]) =>
+      list.find(
+        (s) =>
+          (msg.matriculeAttribue && s.matricule === msg.matriculeAttribue) ||
+          `${s.prenom} ${s.nom}`.toLowerCase() === msg.childName.toLowerCase()
+      );
+    let matchingStudent = findMatch(students);
+    if (!matchingStudent) {
+      await SyncService.synchroniserMaintenant();
+      matchingStudent = findMatch(SchoolStore.getStudents());
+    }
     if (matchingStudent) {
       onGoToPaymentWithStudent(matchingStudent);
     }

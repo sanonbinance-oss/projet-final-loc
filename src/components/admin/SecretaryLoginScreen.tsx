@@ -13,15 +13,16 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
   onSuccess,
   onReturnToPublic,
 }) => {
+  const [email, setEmail] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const school = DEFAULT_SCHOOL_INFO;
 
-  const verifyAndLogin = async (candidatePin: string) => {
+  const verifyAndLogin = async (candidatePin: string, candidateEmail?: string) => {
     setIsVerifying(true);
     setError('');
-    const res = await SupabaseSyncService.verifySecretaryPin(candidatePin);
+    const res = await SupabaseSyncService.verifySecretaryPin(candidatePin, candidateEmail?.trim() || undefined);
     setIsVerifying(false);
     if (res.ok) {
       onSuccess();
@@ -32,7 +33,7 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await verifyAndLogin(pin);
+    await verifyAndLogin(pin, email);
   };
 
   return (
@@ -63,7 +64,23 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
+              Email agent (facultatif)
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError('');
+              }}
+              placeholder="agent@excellence-avenir.bf"
+              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-slate-900 bg-white"
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
               Code PIN Secrétariat

@@ -1,5 +1,6 @@
-import React from 'react';
-import { Printer, CheckCircle, Download, X, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Printer, CheckCircle, X, ShieldCheck } from 'lucide-react';
+import QRCode from 'qrcode';
 import { Payment } from '../types';
 import { DEFAULT_SCHOOL_INFO } from '../services/store';
 import { PaymentService } from '../services/paymentService';
@@ -17,6 +18,37 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   studentScolariteTotale = 180000,
   studentMontantTotalPaye,
 }) => {
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+
+  const verifyUrl =
+    payment && typeof window !== 'undefined'
+      ? `${window.location.origin}/?verify=${encodeURIComponent(payment.reference)}${
+          payment.qrSignature ? `&sig=${encodeURIComponent(payment.qrSignature)}` : ''
+        }`
+      : '';
+
+  useEffect(() => {
+    if (!verifyUrl) {
+      setQrDataUrl('');
+      return;
+    }
+    let cancelled = false;
+    void QRCode.toDataURL(verifyUrl, {
+      width: 140,
+      margin: 1,
+      color: { dark: '#0f172a', light: '#ffffff' },
+    })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [verifyUrl]);
+
   if (!payment) return null;
 
   const school = DEFAULT_SCHOOL_INFO;
@@ -235,12 +267,32 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </table>
           </div>
 
-          {/* Stamps & Signatures */}
-          <div className="grid grid-cols-2 gap-8 pt-4 border-t border-slate-200 text-xs">
+          {/* Stamps, Signatures & QR Authenticity */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-slate-200 text-xs items-stretch">
             <div className="border border-dashed border-slate-300 rounded-xl p-3 text-center bg-slate-50/50">
               <span className="font-bold text-slate-600 block mb-1">Visa du Parent / Déposant</span>
-              <p className="text-[11px] text-slate-400 italic">Signature précédée de la mention « Lu et approuvé »</p>
+              <p className="text-[11px] text-slate-400 italic">Signature précédée de « Lu et approuvé »</p>
               <div className="h-14 mt-2"></div>
+            </div>
+
+            <div className="border border-emerald-200 rounded-xl p-3 text-center bg-emerald-50/40 flex flex-col items-center justify-center">
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt={`QR Code de vérification ${payment.reference}`}
+                  className="w-24 h-24 rounded border border-slate-200 bg-white p-1"
+                />
+              ) : (
+                <div className="w-24 h-24 rounded border border-slate-200 bg-white flex items-center justify-center text-[10px] text-slate-400">
+                  QR Code
+                </div>
+              )}
+              <span className="font-mono text-[10px] font-bold text-slate-800 mt-1.5 break-all">
+                {payment.reference}
+              </span>
+              <span className="text-[9px] text-emerald-800 mt-0.5 leading-tight">
+                Scannez ce QR code pour vérifier l'authenticité en ligne
+              </span>
             </div>
 
             <div className="border border-dashed border-emerald-300 rounded-xl p-3 text-center bg-emerald-50/30 relative">
@@ -251,13 +303,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <p className="text-[11px] text-slate-500 font-mono mt-1">
                 {payment.agentNom ? `Agent: ${payment.agentNom}` : 'Pôle Facturation & Trésorerie'}
               </p>
-              <div className="h-8"></div>
+              <div className="h-6"></div>
             </div>
           </div>
 
           {/* Footer note */}
           <div className="mt-6 pt-3 border-t border-slate-100 text-center text-[10px] text-slate-400">
-            Ce reçu électronique constitue une quittance libératoire dans la limite de la somme versée. Conservez précieusement ce document pour tout justificatif scolaire.
+            Ce reçu électronique constitue une quittance libératoire dans la limite de la somme versée. Authentification en ligne via le QR code ou la référence {payment.reference}.
           </div>
         </div>
 

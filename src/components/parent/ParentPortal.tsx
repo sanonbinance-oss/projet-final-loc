@@ -14,9 +14,14 @@ import {
   GraduationCap,
   RotateCw,
   Mail,
-  Bell
+  Bell,
+  Link2,
+  LogOut,
+  ShieldCheck,
+  QrCode,
+  FileCheck
 } from 'lucide-react';
-import { Payment, PaymentMethod, Student, TuitionTariff, AdmissionRequest, ParentTab } from '../../types';
+import { Payment, PaymentMethod, Student, TuitionTariff, AdmissionRequest, ParentTab, ParentAccount } from '../../types';
 import { SchoolStore, DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { SyncService } from '../../services/sync';
 import { PaymentService } from '../../services/paymentService';
@@ -24,8 +29,14 @@ import { AdmissionForm } from './AdmissionForm';
 import { PaymentOtpModal } from './PaymentOtpModal';
 import { ReenrollmentModal } from './ReenrollmentModal';
 import { ParentMessagesTab, buildParentMessages } from './ParentMessagesTab';
+import { ParentAuthCard, LinkChildModal } from './ParentAuthCard';
+import { ParentHistoryTab } from './ParentHistoryTab';
 
 interface ParentPortalProps {
+  parentAccount: ParentAccount | null;
+  onParentAuthenticated: (parent: ParentAccount) => void;
+  onParentLogout: () => void;
+  onOpenVerifyReceipt: () => void;
   students: Student[];
   admissions: AdmissionRequest[];
   payments: Payment[];
@@ -37,6 +48,10 @@ interface ParentPortalProps {
 }
 
 export const ParentPortal: React.FC<ParentPortalProps> = ({
+  parentAccount,
+  onParentAuthenticated,
+  onParentLogout,
+  onOpenVerifyReceipt,
   students,
   admissions,
   payments,
@@ -62,12 +77,13 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const [customMontant, setCustomMontant] = useState<string>('50000');
   const [montantDon, setMontantDon] = useState<number>(0);
   const [operateur, setOperateur] = useState<PaymentMethod>('ORANGE_MONEY');
-  const [telephonePayeur, setTelephonePayeur] = useState('70213456');
-  const [nomPayeur, setNomPayeur] = useState('Moussa Ouédraogo');
+  const [telephonePayeur, setTelephonePayeur] = useState(parentAccount?.telephone || '');
+  const [nomPayeur, setNomPayeur] = useState(parentAccount?.nomComplet || '');
 
   // Modals state
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
   const [isReenrollModalOpen, setIsReenrollModalOpen] = useState(false);
+  const [isLinkChildModalOpen, setIsLinkChildModalOpen] = useState(false);
   const [lastCompletedPayment, setLastCompletedPayment] = useState<Payment | null>(null);
   const [pendingVerificationPayment, setPendingVerificationPayment] = useState<Payment | null>(null);
   const [rejectionMessage, setRejectionMessage] = useState<string | null>(null);
@@ -112,11 +128,31 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   useEffect(() => {
     if (selectedStudent) {
       const found = students.find((s) => s.id === selectedStudent.id);
-      if (found) setSelectedStudent(found);
+      if (found) {
+        setSelectedStudent(found);
+      } else {
+        setSelectedStudent(students.length > 0 ? students[0] : null);
+      }
     } else if (students.length > 0) {
       setSelectedStudent(students[0]);
+      setNomPayeur(students[0].nomParent || parentAccount?.nomComplet || '');
+      setTelephonePayeur(students[0].telephoneParent || parentAccount?.telephone || '');
     }
   }, [students]);
+
+  useEffect(() => {
+    if (!parentAccount) {
+      setSelectedStudent(null);
+      setLastCompletedPayment(null);
+      setPendingVerificationPayment(null);
+      setRejectionMessage(null);
+      setNomPayeur('');
+      setTelephonePayeur('');
+    } else {
+      setNomPayeur((prev) => prev || parentAccount.nomComplet);
+      setTelephonePayeur((prev) => prev || parentAccount.telephone);
+    }
+  }, [parentAccount]);
 
   // Sync tariffs on tab switch or store change
   useEffect(() => {
@@ -242,8 +278,8 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             Réglez la scolarité et réinscrivez vos enfants en ligne en toute sérénité
           </h1>
 
-          {/* Action Shortcut for parents: clean 2x2 grid on mobile, inline flex on desktop */}
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3 max-w-md sm:max-w-none mx-auto">
+          {/* Action Shortcut for parents */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center justify-center gap-2 sm:gap-3 max-w-xl sm:max-w-none mx-auto">
             <button
               onClick={() => setActiveTab('paiement')}
               className={`w-full sm:w-auto px-3 sm:px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm flex items-center justify-center text-center ${
@@ -274,11 +310,22 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             >
               <Mail className="w-3.5 h-3.5 shrink-0" />
               <span>Messages</span>
-              {unreadMessages.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold leading-none">
+              {parentAccount && unreadMessages.length > 0 && (
+                <span className="px-1.5 py-0.5 bg-rose-600 text-white text-[10px] font-extrabold leading-none rounded-full">
                   {unreadMessages.length}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setActiveTab('historique')}
+              className={`w-full sm:w-auto px-3 sm:px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm inline-flex items-center justify-center gap-1.5 ${
+                activeTab === 'historique'
+                  ? 'bg-white text-slate-900 shadow-lg'
+                  : 'bg-emerald-700/60 hover:bg-emerald-700 text-white border border-emerald-500/30'
+              }`}
+            >
+              <Receipt className="w-3.5 h-3.5 shrink-0" />
+              <span>Mes Reçus</span>
             </button>
             <button
               onClick={() => setActiveTab('tarifs')}
@@ -290,14 +337,67 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             >
               Grille Tarifaire
             </button>
+            <button
+              type="button"
+              onClick={onOpenVerifyReceipt}
+              className="w-full sm:w-auto px-3 sm:px-4 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm inline-flex items-center justify-center gap-1.5 bg-slate-900/60 hover:bg-slate-900 text-emerald-200 border border-emerald-500/30"
+            >
+              <QrCode className="w-3.5 h-3.5 shrink-0" />
+              <span>Vérifier un Reçu</span>
+            </button>
           </div>
         </div>
       </section>
 
       {/* Main Container */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 -mt-8 relative z-20">
+        {/* Logged-in Parent Space Status Strip */}
+        {parentAccount && (
+          <div className="mb-5 bg-white rounded-2xl border border-emerald-200 px-4 py-3 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs font-extrabold text-slate-900">
+                  Espace Privé de {parentAccount.nomComplet}
+                </p>
+                <p className="text-[11px] text-slate-500 font-mono">
+                  {parentAccount.telephone} · {students.length} enfant{students.length > 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsLinkChildModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>Rattacher un élève</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void SyncService.synchroniserMaintenant()}
+                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>Actualiser</span>
+              </button>
+              <button
+                type="button"
+                onClick={onParentLogout}
+                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Déconnexion</span>
+              </button>
+            </div>
+          </div>
+        )}
         {/* Live Notification Banner when Secretary sends a refusal/response message */}
-        {activeTab !== 'messages' && latestUnreadMessage && (
+        {parentAccount && activeTab !== 'messages' && latestUnreadMessage && (
           <div
             className={`mb-6 rounded-2xl border-2 p-4 sm:p-5 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
               latestUnreadMessage.category === 'ADMISSION_REFUSEE'
@@ -341,8 +441,13 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
           </div>
         )}
 
+        {/* Auth Gate on private parent tabs */}
+        {!parentAccount && (activeTab === 'paiement' || activeTab === 'inscription' || activeTab === 'messages' || activeTab === 'historique') && (
+          <ParentAuthCard onAuthenticated={onParentAuthenticated} />
+        )}
+
         {/* TAB 1: PAIEMENT SCOLARITE */}
-        {activeTab === 'paiement' && (
+        {parentAccount && activeTab === 'paiement' && (
           <div className="space-y-6">
             {/* Payment success alert if recently paid */}
             {lastCompletedPayment && (
@@ -490,9 +595,18 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                   <div className="mt-4 pt-3 border-t border-slate-100">
                     {students.length > 0 ? (
                       <>
-                        <span className="text-[11px] text-slate-500 block mb-2">
-                          Élèves enregistrés ({students.length}) :
-                        </span>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] text-slate-500">
+                            Mes enfants ({students.length}) :
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsLinkChildModalOpen(true)}
+                            className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer"
+                          >
+                            + Rattacher un élève
+                          </button>
+                        </div>
                         <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                           {students.map((s) => {
                             const isSelected = selectedStudent?.id === s.id;
@@ -532,20 +646,86 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                         </div>
                       </>
                     ) : (
-                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-2">
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-2.5">
                         <p className="text-xs text-slate-600 font-medium">
-                          Aucun élève enregistré pour l'instant.
+                          Aucun élève encore rattaché à votre compte.
                         </p>
-                        <button
-                          onClick={() => setActiveTab('inscription')}
-                          className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-xs transition-colors cursor-pointer"
-                        >
-                          Faire une Demande d'Admission
-                        </button>
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          <button
+                            onClick={() => setActiveTab('inscription')}
+                            className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-xs transition-colors cursor-pointer"
+                          >
+                            Demander une Place
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsLinkChildModalOpen(true)}
+                            className="px-3.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 font-semibold text-xs transition-colors cursor-pointer"
+                          >
+                            Rattacher par matricule
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
+
+                {/* Compact tracking of this parent's admission requests */}
+                {admissions.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <FileCheck className="w-4 h-4 text-emerald-700" />
+                        <span>Mes Demandes d'Admission ({admissions.length})</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('messages')}
+                        className="text-[11px] font-semibold text-emerald-700 hover:underline cursor-pointer"
+                      >
+                        Voir Messages
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {admissions.slice(0, 3).map((adm) => {
+                        const matchedStu = students.find(
+                          (s) =>
+                            (adm.matriculeAttribue && s.matricule === adm.matriculeAttribue) ||
+                            `${s.prenom} ${s.nom}`.toLowerCase() ===
+                              `${adm.prenomEnfant} ${adm.nomEnfant}`.toLowerCase()
+                        );
+                        return (
+                          <div
+                            key={adm.id}
+                            className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900 truncate">
+                                {adm.prenomEnfant} {adm.nomEnfant} ({adm.classeDemandee})
+                              </p>
+                              <p className="text-[11px] text-slate-500">
+                                {adm.statut === 'en_attente'
+                                  ? 'En attente de validation du secrétariat'
+                                  : adm.statut === 'accepte'
+                                  ? `Validée · ${adm.matriculeAttribue || ''}`
+                                  : 'Refusée (voir Messages)'}
+                              </p>
+                            </div>
+                            {adm.statut === 'accepte' && matchedStu && (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectStudent(matchedStu)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-[11px] cursor-pointer shrink-0"
+                              >
+                                Payer
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Selected Student Card */}
                 {selectedStudent ? (
@@ -938,16 +1118,18 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
         )}
 
         {/* TAB 2: INSCRIPTION / DEMANDE DE PLACE */}
-        {activeTab === 'inscription' && (
+        {parentAccount && activeTab === 'inscription' && (
           <AdmissionForm
+            parentAccount={parentAccount}
             onSuccess={() => {
-              // Notification
+              // Saved in parent account space
             }}
+            onGoToMessages={() => setActiveTab('messages')}
           />
         )}
 
         {/* TAB MESSAGES: RÉPONSES & MOTIFS DU SECRÉTARIAT */}
-        {activeTab === 'messages' && (
+        {parentAccount && activeTab === 'messages' && (
           <ParentMessagesTab
             admissions={admissions}
             payments={payments}
@@ -959,6 +1141,23 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
               setActiveTab('paiement');
             }}
             onOpenReceipt={onOpenReceipt}
+          />
+        )}
+
+        {/* TAB HISTORIQUE: REÇUS & FRATRIE */}
+        {parentAccount && activeTab === 'historique' && (
+          <ParentHistoryTab
+            students={students}
+            admissions={admissions}
+            payments={payments}
+            onOpenReceipt={onOpenReceipt}
+            onOpenLinkChild={() => setIsLinkChildModalOpen(true)}
+            onSelectStudentToPay={(student) => {
+              handleSelectStudent(student);
+              setActiveTab('paiement');
+            }}
+            onGoToAdmission={() => setActiveTab('inscription')}
+            onOpenVerifyReceipt={onOpenVerifyReceipt}
           />
         )}
 
@@ -1085,6 +1284,18 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             setSelectedStudent(updated);
             const reste = Math.max(0, updated.scolariteTotale - updated.montantPaye);
             setCustomMontant(reste > 0 ? Math.min(reste, 50000).toString() : '0');
+          }}
+        />
+      )}
+
+      {/* Link Existing Child Modal */}
+      {parentAccount && (
+        <LinkChildModal
+          isOpen={isLinkChildModalOpen}
+          defaultPhone={parentAccount.telephone}
+          onClose={() => setIsLinkChildModalOpen(false)}
+          onLinked={() => {
+            void SyncService.synchroniserMaintenant();
           }}
         />
       )}

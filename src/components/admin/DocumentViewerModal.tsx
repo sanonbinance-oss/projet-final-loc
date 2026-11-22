@@ -44,6 +44,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
   onReject,
 }) => {
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [activeDocTab, setActiveDocTab] = useState<'bulletin' | 'extrait'>('bulletin');
   const [showRejectInput, setShowRejectInput] = useState<boolean>(false);
   const [rejectionReason, setRejectionReason] = useState<string>('');
 
@@ -51,6 +52,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
     setShowRejectInput(false);
     setRejectionReason('');
     setZoomLevel(100);
+    setActiveDocTab('bulletin');
   }, [admission?.id, isOpen]);
 
   if (!isOpen || !admission) return null;
@@ -127,14 +129,122 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
           </div>
         </div>
 
+        {/* Document Tabs Switcher: Bulletin vs Extrait de Naissance */}
+        <div className="px-5 py-2.5 bg-slate-900 border-b border-slate-700 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveDocTab('bulletin')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeDocTab === 'bulletin'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>1. Bulletin du 3ème Trimestre</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveDocTab('extrait')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeDocTab === 'extrait'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>
+              2. Extrait de Naissance{' '}
+              {admission.extraitNaissanceNomFichier ? '✓' : ''}
+            </span>
+          </button>
+        </div>
+
         {/* Document Content Canvas */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950/70 flex justify-center">
           <div 
             style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
             className="transition-transform duration-150 w-full max-w-2xl bg-white text-slate-900 rounded-xl shadow-2xl p-6 sm:p-8 border border-slate-300 relative select-text"
           >
-            {/* Real Uploaded Image / PDF check */}
-            {admission.bulletinUrl && admission.bulletinUrl.startsWith('data:image') ? (
+            {activeDocTab === 'extrait' ? (
+              admission.extraitNaissanceUrl && admission.extraitNaissanceUrl.startsWith('data:image') ? (
+                <div className="space-y-4">
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-3 py-2 rounded-lg text-xs flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>
+                      Extrait de naissance téléversé ({admission.extraitNaissanceNomFichier || 'extrait_naissance.jpg'})
+                    </span>
+                  </div>
+                  <img
+                    src={admission.extraitNaissanceUrl}
+                    alt="Extrait de naissance téléversé"
+                    className="w-full max-h-[600px] object-contain rounded-lg border border-slate-200"
+                  />
+                </div>
+              ) : admission.extraitNaissanceUrl && admission.extraitNaissanceUrl.startsWith('data:application/pdf') ? (
+                <div className="space-y-3">
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      <span>PDF Extrait de naissance ({admission.extraitNaissanceNomFichier})</span>
+                    </span>
+                    <a
+                      href={admission.extraitNaissanceUrl}
+                      download={admission.extraitNaissanceNomFichier || 'extrait_naissance.pdf'}
+                      className="px-2.5 py-1 rounded bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1"
+                    >
+                      <Download className="w-3 h-3" /> Télécharger PDF
+                    </a>
+                  </div>
+                  <iframe
+                    src={admission.extraitNaissanceUrl}
+                    title="Extrait de naissance PDF"
+                    className="w-full h-[520px] rounded-lg border border-slate-200"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between">
+                    <div className="text-left text-xs leading-tight">
+                      <p className="font-extrabold text-[13px] uppercase text-slate-900">BURKINA FASO</p>
+                      <p className="text-[10px] text-slate-600 italic">Unité - Progrès - Justice</p>
+                      <p className="text-[11px] font-semibold text-slate-800 mt-1">ÉTAT CIVIL</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-block px-3 py-1 bg-slate-900 text-white font-extrabold text-xs tracking-wider rounded uppercase">
+                        EXTRAIT D'ACTE DE NAISSANCE
+                      </span>
+                      <p className="text-[10px] font-mono text-slate-500 mt-1">
+                        Pièce jointe : {admission.extraitNaissanceNomFichier || 'Non renseignée'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 text-xs">
+                    <div className="flex justify-between border-b border-slate-200 pb-2">
+                      <span className="text-slate-500">Nom de l'enfant :</span>
+                      <span className="font-extrabold text-slate-900">{admission.nomEnfant.toUpperCase()}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-200 pb-2">
+                      <span className="text-slate-500">Prénom(s) :</span>
+                      <span className="font-extrabold text-slate-900">{admission.prenomEnfant}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-200 pb-2">
+                      <span className="text-slate-500">Date de naissance déclarée :</span>
+                      <span className="font-mono font-bold text-slate-900">{admission.dateNaissance || 'Non précisée'}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-200 pb-2">
+                      <span className="text-slate-500">Parent / Responsable légal :</span>
+                      <span className="font-bold text-slate-900">{admission.nomParent}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Domicile déclaré :</span>
+                      <span className="font-medium text-slate-800">{admission.adresse}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            ) : admission.bulletinUrl && admission.bulletinUrl.startsWith('data:image') ? (
               <div className="space-y-4">
                 <div className="bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2 rounded-lg text-xs flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />

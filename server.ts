@@ -15,7 +15,7 @@ async function startServer() {
   const app = express();
   const port = Number(process.env.PORT) || 3000;
 
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: '3mb' }));
 
   app.all('/api/auth', async (req, res) => {
     await authHandler(req as unknown as ApiRequest, res as unknown as ApiResponse);

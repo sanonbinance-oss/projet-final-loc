@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS paiements CASCADE;
 DROP TABLE IF EXISTS inscriptions_annuelles CASCADE;
 DROP TABLE IF EXISTS demandes_admission CASCADE;
 DROP TABLE IF EXISTS eleves CASCADE;
+DROP TABLE IF EXISTS comptes_parents CASCADE;
 DROP TABLE IF EXISTS tarifs_scolarite CASCADE;
 DROP TABLE IF EXISTS utilisateurs CASCADE;
 
@@ -95,8 +96,9 @@ CREATE TABLE utilisateurs (
     id SERIAL PRIMARY KEY,
     nom_complet VARCHAR(150) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
-    code_pin VARCHAR(50) NOT NULL DEFAULT '1234',
-    role_utilisateur VARCHAR(50) NOT NULL DEFAULT 'SECRETAIRE', -- 'SECRETAIRE', 'COMPTABLE', 'ADMINISTRATEUR'
+    code_pin VARCHAR(50),
+    pin_hash TEXT,
+    role_utilisateur VARCHAR(50) NOT NULL DEFAULT 'SECRETAIRE', -- 'DIRECTEUR', 'SECRETAIRE', 'CAISSIER'
     telephone VARCHAR(50),
     est_actif BOOLEAN NOT NULL DEFAULT TRUE,
     date_derniere_connexion TIMESTAMP WITH TIME ZONE,
@@ -105,6 +107,22 @@ CREATE TABLE utilisateurs (
 
 CREATE INDEX idx_utilisateurs_email ON utilisateurs(email);
 CREATE INDEX idx_utilisateurs_role ON utilisateurs(role_utilisateur);
+
+-- ----------------------------------------------------------------------------
+-- TABLE 1B : COMPTES_PARENTS (Espaces privés isolés par parent/famille)
+-- ----------------------------------------------------------------------------
+CREATE TABLE comptes_parents (
+    id VARCHAR(60) PRIMARY KEY,
+    nom_complet VARCHAR(150) NOT NULL,
+    telephone VARCHAR(50) NOT NULL,
+    telephone_normalise VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(150),
+    password_hash TEXT NOT NULL,
+    est_actif BOOLEAN NOT NULL DEFAULT TRUE,
+    date_creation TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_comptes_parents_tel ON comptes_parents(telephone_normalise);
 
 
 -- ----------------------------------------------------------------------------
@@ -147,6 +165,7 @@ CREATE TABLE eleves (
     montant_don_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     
     -- Coordonnées Parent / Tuteur
+    parent_compte_id VARCHAR(60) REFERENCES comptes_parents(id) ON DELETE SET NULL,
     nom_parent VARCHAR(150) NOT NULL,
     telephone_parent VARCHAR(50) NOT NULL,
     email_parent VARCHAR(150),
@@ -163,12 +182,15 @@ CREATE TABLE eleves (
     motif_venue VARCHAR(100),
     description_motif TEXT,
     bulletin_nom_fichier VARCHAR(255),
+    extrait_naissance_nom_fichier VARCHAR(255),
     
     statut_inscription VARCHAR(20) NOT NULL DEFAULT 'inscrit', -- 'inscrit' ou 'radie'
     date_inscription DATE NOT NULL DEFAULT CURRENT_DATE,
     date_creation TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     date_modification TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_eleves_parent_compte ON eleves(parent_compte_id);
 
 -- ============================================================================
 -- INDEX DE HAUTE PERFORMANCE POUR PLUS DE 4 000 À 10 000 ÉLÈVES
@@ -222,12 +244,13 @@ CREATE TABLE demandes_admission (
     classe_demandee VARCHAR(50) NOT NULL,
     
     -- Parent
+    parent_compte_id VARCHAR(60) REFERENCES comptes_parents(id) ON DELETE SET NULL,
     nom_parent VARCHAR(150) NOT NULL,
     telephone_parent VARCHAR(50) NOT NULL,
     email_parent VARCHAR(150),
     adresse_domicile TEXT,
     
-    -- Justificatifs du 3ème trimestre & Motif
+    -- Justificatifs du 3ème trimestre, Extrait de naissance & Motif
     est_nouvel_eleve BOOLEAN NOT NULL DEFAULT TRUE,
     etablissement_origine VARCHAR(255),
     decision_bulletin type_decision_bulletin NOT NULL DEFAULT 'PASSAGE',
@@ -235,6 +258,9 @@ CREATE TABLE demandes_admission (
     motif_venue VARCHAR(100),
     description_motif TEXT NOT NULL,
     bulletin_nom_fichier VARCHAR(255),
+    bulletin_url TEXT,
+    extrait_naissance_nom_fichier VARCHAR(255),
+    extrait_naissance_url TEXT,
     montant_don NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     
     -- Instruction par la secrétaire
@@ -248,6 +274,7 @@ CREATE TABLE demandes_admission (
 CREATE INDEX idx_demandes_statut ON demandes_admission(statut_admission);
 CREATE INDEX idx_demandes_date ON demandes_admission(date_demande);
 CREATE INDEX idx_demandes_annee ON demandes_admission(annee_scolaire);
+CREATE INDEX idx_demandes_parent_compte ON demandes_admission(parent_compte_id);
 
 
 -- ----------------------------------------------------------------------------
@@ -276,6 +303,7 @@ CREATE TABLE paiements (
     code_validation_otp VARCHAR(20),                 -- Trace du code OTP validé
     
     -- Payeur
+    parent_compte_id VARCHAR(60) REFERENCES comptes_parents(id) ON DELETE SET NULL,
     nom_payeur VARCHAR(150) NOT NULL,
     telephone_payeur VARCHAR(50),
     
@@ -293,6 +321,7 @@ CREATE INDEX idx_paiements_date ON paiements(date_paiement);
 CREATE INDEX idx_paiements_annee ON paiements(annee_scolaire);
 CREATE INDEX idx_paiements_mode ON paiements(mode_paiement);
 CREATE INDEX idx_paiements_quittance ON paiements(reference_quittance);
+CREATE INDEX idx_paiements_parent_compte ON paiements(parent_compte_id);
 
 -- ============================================================================
 -- 5. INSERTION DE LA GRILLE TARIFAIRE OFFICIELLE 2027-2028

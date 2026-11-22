@@ -9,10 +9,12 @@ import {
   ArrowLeft,
   Building,
   Coins,
-  ShieldCheck
+  ShieldCheck,
+  Users
 } from 'lucide-react';
-import { AdmissionRequest, Payment, Student } from '../../types';
+import { AdmissionRequest, Payment, StaffSession, Student } from '../../types';
 import { DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
+import { getStaffSession } from '../../services/supabaseClient';
 import { DashboardTab } from './DashboardTab';
 import { CashDeskTab } from './CashDeskTab';
 import { StudentsTab } from './StudentsTab';
@@ -21,13 +23,17 @@ import { TransactionsTab } from './TransactionsTab';
 import { ApiConfigTab } from './ApiConfigTab';
 import { TarifsTab } from './TarifsTab';
 import { AuditTab } from './AuditTab';
+import { StaffManagementTab } from './StaffManagementTab';
+
+type AdminTabId = 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'equipe' | 'api';
 
 interface AdminPortalProps {
   students: Student[];
   payments: Payment[];
   admissions: AdmissionRequest[];
-  activeTab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api';
-  setActiveTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api') => void;
+  staffSession?: StaffSession | null;
+  activeTab: AdminTabId;
+  setActiveTab: (tab: AdminTabId) => void;
   onOpenReceipt: (payment: Payment, scolariteTotale?: number, montantPaye?: number) => void;
   onRefreshData: () => void;
   onSwitchToParent: () => void;
@@ -37,6 +43,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   students,
   payments,
   admissions,
+  staffSession,
   activeTab,
   setActiveTab,
   onOpenReceipt,
@@ -44,6 +51,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onSwitchToParent,
 }) => {
   const school = DEFAULT_SCHOOL_INFO;
+  const resolvedStaffSession = staffSession ?? getStaffSession();
+  const isCashierOnly = resolvedStaffSession?.staffRole === 'CAISSIER';
   const [cashDeskInitialStudentId, setCashDeskInitialStudentId] = useState<string | null>(null);
 
   const pendingAdmissionsCount = admissions.filter((a) => a.statut === 'en_attente').length;
@@ -71,6 +80,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-mono">
                   Session {CURRENT_SCHOOL_YEAR}
                 </span>
+                {resolvedStaffSession && (
+                  <span className="text-[11px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
+                    {resolvedStaffSession.author} · {resolvedStaffSession.staffRole}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500">
                 Secrétariat & Intendance
@@ -142,17 +156,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             <span>Gestion des Élèves ({students.length})</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('tarifs')}
-            className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-              activeTab === 'tarifs'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Coins className="w-3.5 h-3.5" />
-            <span>Tarifs & Scolarités</span>
-          </button>
+          {!isCashierOnly && (
+            <button
+              onClick={() => setActiveTab('tarifs')}
+              className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'tarifs'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Coins className="w-3.5 h-3.5" />
+              <span>Tarifs & Scolarités</span>
+            </button>
+          )}
 
           <button
             onClick={() => setActiveTab('transactions')}
@@ -184,16 +200,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('api')}
+            onClick={() => setActiveTab('equipe')}
             className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-              activeTab === 'api'
+              activeTab === 'equipe'
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            <KeyRound className="w-3.5 h-3.5" />
-            <span>Passerelles & Clés API</span>
+            <Users className="w-3.5 h-3.5" />
+            <span>Équipe & Accès</span>
           </button>
+
+          {!isCashierOnly && (
+            <button
+              onClick={() => setActiveTab('api')}
+              className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'api'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Passerelles & Clés API</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -250,7 +280,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           <AuditTab onRefresh={onRefreshData} />
         )}
 
-        {activeTab === 'api' && <ApiConfigTab />}
+        {activeTab === 'equipe' && (
+          <StaffManagementTab staffSession={resolvedStaffSession} />
+        )}
+
+        {activeTab === 'api' && !isCashierOnly && <ApiConfigTab />}
       </main>
     </div>
   );

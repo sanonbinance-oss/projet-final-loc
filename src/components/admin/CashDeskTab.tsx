@@ -17,6 +17,7 @@ import {
 import { Payment, Student } from '../../types';
 import { SchoolStore } from '../../services/store';
 import { PaymentService } from '../../services/paymentService';
+import { getStaffSession } from '../../services/supabaseClient';
 
 import { ReenrollmentModal } from '../parent/ReenrollmentModal';
 
@@ -45,7 +46,9 @@ export const CashDeskTab: React.FC<CashDeskTabProps> = ({
   const [montantDon, setMontantDon] = useState<string>('5000');
   const [nomPayeur, setNomPayeur] = useState(selectedStudent?.nomParent || '');
   const [telephonePayeur, setTelephonePayeur] = useState(selectedStudent?.telephoneParent || '');
-  const [agentNom, setAgentNom] = useState('Mme Sanfo (Secrétaire Comptable)');
+  const [agentNom, setAgentNom] = useState(
+    () => getStaffSession()?.author || 'Secrétaire Principale'
+  );
   const [notes, setNotes] = useState('Règlement scolarité + don au guichet');
   const [isReenrollModalOpen, setIsReenrollModalOpen] = useState(false);
 

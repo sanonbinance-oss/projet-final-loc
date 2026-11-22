@@ -1,0 +1,380 @@
+import React, { useEffect, useState } from 'react';
+import {
+  Users,
+  UserPlus,
+  KeyRound,
+  ShieldCheck,
+  AlertCircle,
+  CheckCircle2,
+  Power,
+  RefreshCw,
+} from 'lucide-react';
+import { StaffRole, StaffSession, StaffUser } from '../../types';
+import { SupabaseSyncService } from '../../services/supabaseClient';
+
+interface StaffManagementTabProps {
+  staffSession: StaffSession | null;
+}
+
+const ROLE_LABELS: Record<StaffRole, string> = {
+  DIRECTEUR: 'Directeur',
+  SECRETAIRE: 'Secrétaire',
+  CAISSIER: 'Caissier / Intendant',
+};
+
+export const StaffManagementTab: React.FC<StaffManagementTabProps> = ({ staffSession }) => {
+  const [staffList, setStaffList] = useState<StaffUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  // New staff form (DIRECTEUR only)
+  const [nomComplet, setNomComplet] = useState('');
+  const [email, setEmail] = useState('');
+  const [telephone, setTelephone] = useState('');
+  const [role, setRole] = useState<StaffRole>('SECRETAIRE');
+  const [pin, setPin] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+
+  // Own PIN update
+  const [currentPin, setCurrentPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [pinLoading, setPinLoading] = useState(false);
+
+  const isDirector = staffSession?.staffRole === 'DIRECTEUR';
+
+  const loadStaff = async () => {
+    setLoading(true);
+    setError('');
+    const res = await SupabaseSyncService.listStaffAccounts();
+    setLoading(false);
+    if (res.ok && res.staff) {
+      setStaffList(res.staff);
+    } else {
+      setError(res.error || 'Impossible de charger la liste des agents.');
+    }
+  };
+
+  useEffect(() => {
+    void loadStaff();
+  }, []);
+
+  const handleCreateStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isDirector || isCreating) return;
+    setError('');
+    setFeedback('');
+    setIsCreating(true);
+    const res = await SupabaseSyncService.createStaffAccount({
+      nomComplet: nomComplet.trim(),
+      email: email.trim(),
+      telephone: telephone.trim() || undefined,
+      role,
+      pin: pin.trim(),
+    });
+    setIsCreating(false);
+    if (res.ok) {
+      setFeedback(`Compte agent créé pour ${nomComplet.trim()}.`);
+      setNomComplet('');
+      setEmail('');
+      setTelephone('');
+      setPin('');
+      void loadStaff();
+    } else {
+      setError(res.error || 'Création impossible.');
+    }
+  };
+
+  const handleToggleStatus = async (user: StaffUser) => {
+    if (!isDirector) return;
+    setError('');
+    setFeedback('');
+    const res = await SupabaseSyncService.toggleStaffAccount(user.id, !user.estActif);
+    if (res.ok) {
+      setFeedback(`Statut de ${user.nomComplet} mis à jour.`);
+      void loadStaff();
+    } else {
+      setError(res.error || 'Action refusée.');
+    }
+  };
+
+  const handleChangeOwnPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinLoading) return;
+    setError('');
+    setFeedback('');
+    setPinLoading(true);
+    const res = await SupabaseSyncService.updateOwnStaffPin(currentPin.trim(), newPin.trim());
+    setPinLoading(false);
+    if (res.ok) {
+      setFeedback('Votre code PIN personnel a bien été mis à jour.');
+      setCurrentPin('');
+      setNewPin('');
+    } else {
+      setError(res.error || 'Modification impossible.');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center">
+            <Users className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Équipe & Gestion des Accès</h2>
+            <p className="text-xs text-slate-500">
+              Session active : <strong>{staffSession?.author || 'Agent'}</strong> (
+              {staffSession?.staffRole ? ROLE_LABELS[staffSession.staffRole] : 'Secrétariat'})
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void loadStaff()}
+          disabled={loading}
+          className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer inline-flex items-center gap-1.5"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <span>Actualiser</span>
+        </button>
+      </div>
+
+      {error && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {feedback && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2 font-semibold">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{feedback}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left: Staff directory + New agent (if Director) */}
+        <div className="lg:col-span-7 space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">
+                Comptes du Personnel ({staffList.length})
+              </h3>
+            </div>
+
+            {loading ? (
+              <div className="p-8 text-center text-xs text-slate-500">Chargement des comptes...</div>
+            ) : staffList.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-500">Aucun compte configuré.</div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {staffList.map((u) => (
+                  <div
+                    key={u.id}
+                    className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-sm text-slate-900">{u.nomComplet}</span>
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold uppercase">
+                          {ROLE_LABELS[u.role] || u.role}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            u.estActif
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {u.estActif ? 'Actif' : 'Désactivé'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 font-mono mt-0.5">
+                        {u.email}
+                        {u.telephone ? ` · ${u.telephone}` : ''}
+                      </p>
+                      {u.dateDerniereConnexion && (
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Dernière connexion : {new Date(u.dateDerniereConnexion).toLocaleString('fr-FR')}
+                        </p>
+                      )}
+                    </div>
+
+                    {isDirector && (
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleStatus(u)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer inline-flex items-center gap-1.5 shrink-0 ${
+                          u.estActif
+                            ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                        }`}
+                      >
+                        <Power className="w-3.5 h-3.5" />
+                        <span>{u.estActif ? 'Désactiver' : 'Réactiver'}</span>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {isDirector && (
+            <form
+              onSubmit={handleCreateStaff}
+              className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4"
+            >
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <UserPlus className="w-4 h-4 text-emerald-700" />
+                <h3 className="text-sm font-bold text-slate-900">Créer un Compte Agent</h3>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Nom complet *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={nomComplet}
+                    onChange={(e) => setNomComplet(e.target.value)}
+                    placeholder="Ex: Mme Kaboré Awa"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Email professionnel *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="agent@excellence-avenir.bf"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Rôle *</label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as StaffRole)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  >
+                    <option value="SECRETAIRE">Secrétaire</option>
+                    <option value="CAISSIER">Caissier / Intendant</option>
+                    <option value="DIRECTEUR">Directeur</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Code PIN personnel (4+ caractères) *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={4}
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value)}
+                    placeholder="Code PIN individuel"
+                    className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Téléphone (facultatif)
+                  </label>
+                  <input
+                    type="tel"
+                    value={telephone}
+                    onChange={(e) => setTelephone(e.target.value)}
+                    placeholder="+226 70 ..."
+                    className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isCreating}
+                className="w-full py-2.5 text-xs font-bold rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white cursor-pointer"
+              >
+                {isCreating ? 'Création en cours...' : 'Créer le compte agent'}
+              </button>
+            </form>
+          )}
+        </div>
+
+        {/* Right: Own PIN update */}
+        <div className="lg:col-span-5">
+          <form
+            onSubmit={handleChangeOwnPin}
+            className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4"
+          >
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <KeyRound className="w-4 h-4 text-emerald-700" />
+              <h3 className="text-sm font-bold text-slate-900">Modifier mon Code PIN</h3>
+            </div>
+
+            {!staffSession?.email ? (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                <span>
+                  Vous êtes connecté via le code administrateur global. Connectez-vous avec un compte personnel pour modifier son code PIN individuel.
+                </span>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Code PIN actuel *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={currentPin}
+                    onChange={(e) => setCurrentPin(e.target.value)}
+                    className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Nouveau code PIN (4+ caractères) *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={4}
+                    value={newPin}
+                    onChange={(e) => setNewPin(e.target.value)}
+                    className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={pinLoading}
+                  className="w-full py-2.5 text-xs font-bold rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white cursor-pointer"
+                >
+                  {pinLoading ? 'Enregistrement...' : 'Mettre à jour mon PIN'}
+                </button>
+              </>
+            )}
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};

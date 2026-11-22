@@ -302,16 +302,23 @@ export const AdmissionsTab: React.FC<AdmissionsTabProps> = ({
                             Moyenne : <strong>{req.moyenneAnnuelle} / 20</strong>
                           </span>
                         ) : null}
-                        <span className="block text-[10px] text-slate-400 font-mono truncate max-w-[150px]">
-                          Doc : {req.bulletinNomFichier || 'Bulletin.pdf'}
+                        <span className="block text-[10px] text-slate-400 font-mono truncate max-w-[160px]">
+                          Bull : {req.bulletinNomFichier || 'Bulletin.pdf'}
                         </span>
+                        {req.extraitNaissanceNomFichier && (
+                          <span className="block text-[10px] text-emerald-700 font-mono truncate max-w-[160px]">
+                            Ext : {req.extraitNaissanceNomFichier}
+                          </span>
+                        )}
                         <button
                           onClick={() => setInspectingAdmission(req)}
                           className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold cursor-pointer transition-colors shadow-2xs"
-                          title="Ouvrir le document dans le visualiseur officiel pour vérifier les notes et cachets"
+                          title="Ouvrir le bulletin et l'extrait de naissance dans le visualiseur"
                         >
                           <Eye className="w-3 h-3" />
-                          <span>Examiner le document</span>
+                          <span>
+                            {req.extraitNaissanceNomFichier ? 'Bulletin + Extrait' : 'Examiner le document'}
+                          </span>
                         </button>
                       </td>
 

@@ -16,7 +16,7 @@ interface DashboardTabProps {
   payments: Payment[];
   admissions: AdmissionRequest[];
   onOpenReceipt: (payment: Payment) => void;
-  onNavigateToTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'api') => void;
+  onNavigateToTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'equipe' | 'api') => void;
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({

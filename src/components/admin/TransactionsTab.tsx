@@ -19,6 +19,7 @@ import {
 import { Payment, PaymentMethod } from '../../types';
 import { PaymentService } from '../../services/paymentService';
 import { SchoolStore } from '../../services/store';
+import { getStaffSession } from '../../services/supabaseClient';
 
 interface TransactionsTabProps {
   payments: Payment[];
@@ -37,7 +38,10 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({
   const [rejectMotif, setRejectMotif] = useState("Fonds non reçus sur le compte Orange Money de l'établissement");
 
   const handleValidateMobilePayment = (p: Payment) => {
-    SchoolStore.validateMobileMoneyPayment(p.id, 'Secrétaire Principale');
+    SchoolStore.validateMobileMoneyPayment(
+      p.id,
+      getStaffSession()?.author || 'Secrétaire Principale'
+    );
     if (onRefreshData) onRefreshData();
   };
 

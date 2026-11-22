@@ -19,6 +19,18 @@ export interface DatabaseConfig {
   envVarName: string;
 }
 
+export type StaffRole = 'DIRECTEUR' | 'SECRETAIRE' | 'CAISSIER';
+
+export interface VerifiedSession {
+  valid: boolean;
+  type?: 'STAFF' | 'PARENT';
+  userId?: string;
+  staffRole?: StaffRole;
+  author?: string;
+  phone?: string;
+  email?: string;
+}
+
 const globalState = globalThis as unknown as {
   __paykalPgPool?: pg.Pool;
   __paykalPgPoolUrl?: string;
@@ -93,7 +105,7 @@ export function getPool(): { pool: pg.Pool; envVarName: string } | null {
 
   const pool = new Pool({
     connectionString: normalizedUrl,
-    max: 3,
+    max: 5,
     idleTimeoutMillis: 10000,
     connectionTimeoutMillis: 7000,
     ssl: isLocal ? false : { rejectUnauthorized: false },
@@ -104,6 +116,17 @@ export function getPool(): { pool: pg.Pool; envVarName: string } | null {
   globalState.__paykalSchemaPromise = undefined;
 
   return { pool, envVarName: config.envVarName };
+}
+
+export function normalizePhone(rawPhone: string): string {
+  const digits = String(rawPhone || '').replace(/\D/g, '');
+  if (digits.startsWith('00226') && digits.length > 10) {
+    return digits.slice(5);
+  }
+  if (digits.startsWith('226') && digits.length >= 11) {
+    return digits.slice(3);
+  }
+  return digits;
 }
 
 export async function ensureSchema(pool: pg.Pool): Promise<void> {
@@ -143,9 +166,22 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
         id SERIAL PRIMARY KEY,
         nom_complet VARCHAR(150) NOT NULL,
         email VARCHAR(150) UNIQUE NOT NULL,
-        code_pin VARCHAR(50) NOT NULL DEFAULT '1234',
+        code_pin VARCHAR(150) NOT NULL DEFAULT '',
+        pin_hash TEXT,
         role_utilisateur VARCHAR(50) NOT NULL DEFAULT 'SECRETAIRE',
         telephone VARCHAR(50),
+        est_actif BOOLEAN NOT NULL DEFAULT TRUE,
+        date_derniere_connexion TIMESTAMP WITH TIME ZONE,
+        date_creation TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS comptes_parents (
+        id VARCHAR(50) PRIMARY KEY,
+        nom_complet VARCHAR(150) NOT NULL,
+        telephone VARCHAR(50) NOT NULL,
+        telephone_normalise VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(150),
+        mot_de_passe_hash TEXT NOT NULL,
         est_actif BOOLEAN NOT NULL DEFAULT TRUE,
         date_derniere_connexion TIMESTAMP WITH TIME ZONE,
         date_creation TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -176,6 +212,7 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
         scolarite_totale NUMERIC(12, 2) NOT NULL DEFAULT 200000.00,
         montant_paye NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
         montant_don_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+        parent_compte_id VARCHAR(50),
         nom_parent VARCHAR(150) NOT NULL,
         telephone_parent VARCHAR(50) NOT NULL,
         email_parent VARCHAR(150),
@@ -190,6 +227,7 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
         motif_venue VARCHAR(100),
         description_motif TEXT,
         bulletin_nom_fichier VARCHAR(255),
+        extrait_naissance_nom_fichier VARCHAR(255),
         statut_inscription VARCHAR(20) NOT NULL DEFAULT 'inscrit',
         date_inscription DATE NOT NULL DEFAULT CURRENT_DATE,
         date_creation TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -214,6 +252,7 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
         id VARCHAR(50) PRIMARY KEY,
         date_demande TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         annee_scolaire VARCHAR(20) NOT NULL DEFAULT '2027-2028',
+        parent_compte_id VARCHAR(50),
         nom_enfant VARCHAR(100) NOT NULL,
         prenom_enfant VARCHAR(100) NOT NULL,
         date_naissance DATE,
@@ -229,6 +268,9 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
         motif_venue VARCHAR(100),
         description_motif TEXT NOT NULL,
         bulletin_nom_fichier VARCHAR(255),
+        bulletin_url TEXT,
+        extrait_naissance_nom_fichier VARCHAR(255),
+        extrait_naissance_url TEXT,
         montant_don NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
         statut_admission type_statut_admission NOT NULL DEFAULT 'EN_ATTENTE',
         matricule_attribue VARCHAR(50) REFERENCES eleves(matricule) ON DELETE SET NULL,
@@ -241,6 +283,7 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
         id VARCHAR(50) PRIMARY KEY,
         reference_quittance VARCHAR(100) UNIQUE NOT NULL,
         annee_scolaire VARCHAR(20) NOT NULL DEFAULT '2027-2028',
+        parent_compte_id VARCHAR(50),
         eleve_id VARCHAR(50) NOT NULL REFERENCES eleves(id) ON DELETE CASCADE,
         eleve_matricule VARCHAR(50) NOT NULL,
         nom_eleve VARCHAR(200) NOT NULL,
@@ -273,21 +316,52 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
 
     // Add missing columns safely for pre-existing tables
     await client.query(`
+      ALTER TABLE utilisateurs ADD COLUMN IF NOT EXISTS pin_hash TEXT;
+      ALTER TABLE utilisateurs ALTER COLUMN code_pin TYPE VARCHAR(150);
+      ALTER TABLE eleves ADD COLUMN IF NOT EXISTS parent_compte_id VARCHAR(50);
+      ALTER TABLE eleves ADD COLUMN IF NOT EXISTS extrait_naissance_nom_fichier VARCHAR(255);
+      ALTER TABLE demandes_admission ADD COLUMN IF NOT EXISTS parent_compte_id VARCHAR(50);
+      ALTER TABLE demandes_admission ADD COLUMN IF NOT EXISTS bulletin_url TEXT;
+      ALTER TABLE demandes_admission ADD COLUMN IF NOT EXISTS extrait_naissance_nom_fichier VARCHAR(255);
+      ALTER TABLE demandes_admission ADD COLUMN IF NOT EXISTS extrait_naissance_url TEXT;
       ALTER TABLE demandes_admission ADD COLUMN IF NOT EXISTS motif_refus TEXT;
+      ALTER TABLE paiements ADD COLUMN IF NOT EXISTS parent_compte_id VARCHAR(50);
       ALTER TABLE paiements ADD COLUMN IF NOT EXISTS code_validation_otp VARCHAR(20);
+      CREATE INDEX IF NOT EXISTS idx_parents_tel ON comptes_parents(telephone_normalise);
       CREATE INDEX IF NOT EXISTS idx_demandes_statut ON demandes_admission(statut_admission);
+      CREATE INDEX IF NOT EXISTS idx_demandes_parent ON demandes_admission(parent_compte_id);
       CREATE INDEX IF NOT EXISTS idx_demandes_date ON demandes_admission(date_demande);
       CREATE INDEX IF NOT EXISTS idx_eleves_matricule ON eleves(matricule);
+      CREATE INDEX IF NOT EXISTS idx_eleves_parent ON eleves(parent_compte_id);
       CREATE INDEX IF NOT EXISTS idx_paiements_eleve_id ON paiements(eleve_id);
+      CREATE INDEX IF NOT EXISTS idx_paiements_parent ON paiements(parent_compte_id);
       CREATE INDEX IF NOT EXISTS idx_paiements_date ON paiements(date_paiement);
       CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_activites(date_action DESC);
     `);
 
-    await client.query(`
-      INSERT INTO utilisateurs (nom_complet, email, code_pin, role_utilisateur, telephone)
-      VALUES ('Secrétaire Principale', 'secretaire@excellence-avenir.bf', '1234', 'SECRETAIRE', '+226 70 00 11 22')
+    const defaultAdminHash = hashSecret('1234');
+    await client.query(
+      `
+      INSERT INTO utilisateurs (nom_complet, email, code_pin, pin_hash, role_utilisateur, telephone)
+      VALUES ('Direction & Secrétariat Principal', 'secretaire@excellence-avenir.bf', '', $1, 'DIRECTEUR', '+226 70 00 11 22')
       ON CONFLICT (email) DO NOTHING;
+      `,
+      [defaultAdminHash]
+    );
 
+    // Upgrade legacy plaintext default '1234' rows transparently to scrypt hash if pin_hash is empty
+    const legacyUsers = await client.query<{ id: number; code_pin: string; pin_hash: string | null }>(
+      `SELECT id, code_pin, pin_hash FROM utilisateurs WHERE pin_hash IS NULL AND code_pin IS NOT NULL AND code_pin <> ''`
+    );
+    for (const row of legacyUsers.rows) {
+      const hashed = hashSecret(row.code_pin);
+      await client.query(`UPDATE utilisateurs SET pin_hash = $1, code_pin = '' WHERE id = $2`, [
+        hashed,
+        row.id,
+      ]);
+    }
+
+    await client.query(`
       INSERT INTO tarifs_scolarite (annee_scolaire, niveau, montant_scolarite, frais_inscription, frais_annexes)
       VALUES
         ('2027-2028', '6ème',       160000.00, 25000.00, 15000.00),
@@ -316,11 +390,11 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
 function getSigningKey(): Buffer {
   const configured = process.env.SESSION_SECRET?.trim();
   if (configured) {
-    return crypto.createHmac('sha256', configured).update('paykal-session-v1').digest();
+    return crypto.createHmac('sha256', configured).update('paykal-session-v2').digest();
   }
   const dbCfg = getDatabaseConfig();
   if (dbCfg) {
-    return crypto.createHmac('sha256', dbCfg.url).update('paykal-session-v1').digest();
+    return crypto.createHmac('sha256', dbCfg.url).update('paykal-session-v2').digest();
   }
   if (!globalState.__paykalEphemeralSecret) {
     globalState.__paykalEphemeralSecret = crypto.randomBytes(32);
@@ -328,10 +402,47 @@ function getSigningKey(): Buffer {
   return globalState.__paykalEphemeralSecret;
 }
 
-export function createSecretaryToken(author: string): string {
+export function hashSecret(secret: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = crypto.scryptSync(secret, salt, 64).toString('hex');
+  return `scrypt$${salt}$${derived}`;
+}
+
+export function verifySecret(input: string, stored: string): boolean {
+  if (!input || !stored) return false;
+  if (stored.startsWith('scrypt$')) {
+    const parts = stored.split('$');
+    if (parts.length !== 3) return false;
+    const [, salt, hashHex] = parts;
+    const expectedBuf = Buffer.from(hashHex, 'hex');
+    const derivedBuf = crypto.scryptSync(input, salt, 64);
+    if (derivedBuf.length !== expectedBuf.length) return false;
+    return crypto.timingSafeEqual(derivedBuf, expectedBuf);
+  }
+  return verifyPinConstantTime(input, stored);
+}
+
+export function verifyPinConstantTime(inputPin: string, expectedPin: string): boolean {
+  const a = crypto.createHash('sha256').update(inputPin).digest();
+  const b = crypto.createHash('sha256').update(expectedPin).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+export function createSessionToken(claims: {
+  type: 'STAFF' | 'PARENT';
+  userId: string;
+  author: string;
+  staffRole?: StaffRole;
+  phone?: string;
+  email?: string;
+}): string {
   const payload = {
-    role: 'SECRETAIRE',
-    author,
+    type: claims.type,
+    sub: claims.userId,
+    author: claims.author,
+    staffRole: claims.staffRole,
+    phone: claims.phone,
+    email: claims.email,
     exp: Math.floor(Date.now() / 1000) + 12 * 3600,
   };
   const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
@@ -339,7 +450,22 @@ export function createSecretaryToken(author: string): string {
   return `${encoded}.${sig}`;
 }
 
-export function verifySecretaryToken(req: ApiRequest): { valid: boolean; author?: string } {
+export function createSecretaryToken(
+  author: string,
+  staffRole: StaffRole = 'SECRETAIRE',
+  userId = 'staff-admin',
+  email?: string
+): string {
+  return createSessionToken({
+    type: 'STAFF',
+    userId,
+    author,
+    staffRole,
+    email,
+  });
+}
+
+export function verifySessionToken(req: ApiRequest): VerifiedSession {
   const rawAuth = req.headers['authorization'];
   const header = Array.isArray(rawAuth) ? rawAuth[0] : rawAuth;
   if (!header || !header.startsWith('Bearer ')) {
@@ -359,23 +485,78 @@ export function verifySecretaryToken(req: ApiRequest): { valid: boolean; author?
 
   try {
     const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as {
+      type?: 'STAFF' | 'PARENT';
       role?: string;
+      sub?: string;
       author?: string;
+      staffRole?: StaffRole;
+      phone?: string;
+      email?: string;
       exp?: number;
     };
-    if (parsed.role !== 'SECRETAIRE' || !parsed.exp || parsed.exp < Math.floor(Date.now() / 1000)) {
+    if (!parsed.exp || parsed.exp < Math.floor(Date.now() / 1000)) {
       return { valid: false };
     }
-    return { valid: true, author: parsed.author || 'Secrétaire Principale' };
+    if (parsed.type === 'STAFF' || parsed.role === 'SECRETAIRE') {
+      return {
+        valid: true,
+        type: 'STAFF',
+        userId: parsed.sub || 'staff-admin',
+        staffRole: parsed.staffRole || 'SECRETAIRE',
+        author: parsed.author || 'Secrétaire Principale',
+        email: parsed.email,
+      };
+    }
+    if (parsed.type === 'PARENT' && parsed.sub) {
+      return {
+        valid: true,
+        type: 'PARENT',
+        userId: parsed.sub,
+        author: parsed.author || 'Parent',
+        phone: parsed.phone || '',
+        email: parsed.email,
+      };
+    }
+    return { valid: false };
   } catch {
     return { valid: false };
   }
 }
 
-export function verifyPinConstantTime(inputPin: string, expectedPin: string): boolean {
-  const a = crypto.createHash('sha256').update(inputPin).digest();
-  const b = crypto.createHash('sha256').update(expectedPin).digest();
-  return crypto.timingSafeEqual(a, b);
+export function verifySecretaryToken(req: ApiRequest): {
+  valid: boolean;
+  author?: string;
+  staffRole?: StaffRole;
+  userId?: string;
+} {
+  const session = verifySessionToken(req);
+  if (!session.valid || session.type !== 'STAFF') {
+    return { valid: false };
+  }
+  return {
+    valid: true,
+    author: session.author,
+    staffRole: session.staffRole,
+    userId: session.userId,
+  };
+}
+
+export function signReceiptReference(reference: string, matricule: string, montantTotal: number): string {
+  const canonical = `${reference}|${matricule}|${Math.round(Number(montantTotal) || 0)}`;
+  return crypto.createHmac('sha256', getSigningKey()).update(canonical).digest('hex').slice(0, 16).toUpperCase();
+}
+
+export function verifyReceiptSignature(
+  reference: string,
+  matricule: string,
+  montantTotal: number,
+  providedSig: string
+): boolean {
+  if (!providedSig) return false;
+  const expected = signReceiptReference(reference, matricule, montantTotal);
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(providedSig.trim().toUpperCase(), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 export function sendJson(res: ApiResponse, statusCode: number, payload: unknown): void {
@@ -407,7 +588,7 @@ export async function readJsonBody(req: ApiRequest): Promise<Record<string, unkn
     let size = 0;
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
-      if (size <= 2 * 1024 * 1024) {
+      if (size <= 3 * 1024 * 1024) {
         chunks.push(chunk);
       }
     });

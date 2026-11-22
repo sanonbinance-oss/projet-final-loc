@@ -1,36 +1,60 @@
 export type UserRole = 'parent' | 'admin';
 
-export type ParentTab = 'paiement' | 'inscription' | 'messages' | 'tarifs' | 'contact';
+export type ParentTab = 'paiement' | 'inscription' | 'messages' | 'historique' | 'tarifs' | 'contact';
 
-export type PaymentMethod = 
-  | 'ORANGE_MONEY' 
-  | 'MOOV_MONEY' 
-  | 'MTN_MONEY' 
-  | 'LIGDICASH' 
+export type StaffRole = 'DIRECTEUR' | 'SECRETAIRE' | 'CAISSIER';
+
+export interface ParentAccount {
+  id: string;
+  nomComplet: string;
+  telephone: string;
+  telephoneNormalise?: string;
+  email?: string;
+}
+
+export interface StaffSession {
+  author: string;
+  staffRole: StaffRole;
+  email?: string;
+}
+
+export interface StaffUser {
+  id: number;
+  nomComplet: string;
+  email: string;
+  role: StaffRole;
+  telephone?: string;
+  estActif: boolean;
+  dateDerniereConnexion?: string | null;
+  dateCreation: string;
+}
+
+export type PaymentMethod =
+  | 'ORANGE_MONEY'
+  | 'MOOV_MONEY'
+  | 'MTN_MONEY'
+  | 'LIGDICASH'
   | 'ESPECES_GUICHET';
 
 export type PaymentStatus = 'SUCCES' | 'EN_COURS' | 'ECHOUE' | 'EN_ATTENTE_VERIFICATION';
 
 export type AcademicDecision = 'PASSAGE' | 'REDOUBLEMENT' | 'NOUVEAU_CYCLE';
 
-export type TransferReason = 
-  | 'DEMENAGEMENT' 
-  | 'EXCLUSION_PROBLEME' 
-  | 'RAPPROCHEMENT' 
-  | 'EXCELLENCE' 
+export type TransferReason =
+  | 'DEMENAGEMENT'
+  | 'EXCLUSION_PROBLEME'
+  | 'RAPPROCHEMENT'
+  | 'EXCELLENCE'
   | 'AUTRE';
 
-/**
- * Grille dynamique des tarifs de scolarité par classe et par année scolaire
- */
 export interface TuitionTariff {
   id: string;
-  anneeScolaire: string; // Ex: '2027-2028' ou '2026-2027'
-  niveau: string;        // Ex: '6ème', '5ème', '4ème', '3ème', '2nde A', '2nde C', '1ère A', '1ère D', 'Tle A', 'Tle D'
-  montantScolarite: number; // Montant net scolarité en FCFA
-  fraisInscription: number; // Frais d'inscription / réinscription (par défaut 0)
-  fraisAnnexes: number;     // Tenue, APE, bibliothèque, etc.
-  totalExigible: number;    // Calculé : montantScolarite + fraisInscription + fraisAnnexes
+  anneeScolaire: string;
+  niveau: string;
+  montantScolarite: number;
+  fraisInscription: number;
+  fraisAnnexes: number;
+  totalExigible: number;
   updatedAt: string;
 }
 
@@ -41,16 +65,17 @@ export interface Student {
   prenom: string;
   dateNaissance: string;
   classe: string;
-  anneeScolaire: string; // Ex: '2027-2028'
+  anneeScolaire: string;
   scolariteTotale: number;
   montantPaye: number;
+  parentCompteId?: string;
   nomParent: string;
   telephoneParent: string;
   emailParent?: string;
   adresse?: string;
   dateInscription: string;
   statut: 'inscrit' | 'radie';
-  
+
   // Paramètres scolaires & transferts
   etablissementOrigine?: string;
   decisionBulletin?: AcademicDecision;
@@ -58,12 +83,13 @@ export interface Student {
   motifVenue?: TransferReason;
   descriptionVenue?: string;
   bulletinNomFichier?: string;
+  extraitNaissanceNomFichier?: string;
   montantDonTotal?: number;
 
   // Gestion de la bascule d'année et réinscriptions (2026-2027 -> 2027-2028)
-  anneeOrigine?: string;             // Ex: '2026-2027'
-  classePrecedente?: string;         // Ex: '6ème A'
-  statutFinAnnee?: 'PASSANT' | 'REDOUBLANT'; // Décision de l'année passée
+  anneeOrigine?: string;
+  classePrecedente?: string;
+  statutFinAnnee?: 'PASSANT' | 'REDOUBLANT';
   statutReinscription?: 'EN_ATTENTE_REINSCRIPTION' | 'REINSCRIT';
   fraisInscriptionPayes?: boolean;
 }
@@ -73,11 +99,12 @@ export type AdmissionStatus = 'en_attente' | 'accepte' | 'refuse';
 export interface AdmissionRequest {
   id: string;
   dateDemande: string;
+  parentCompteId?: string;
   nomEnfant: string;
   prenomEnfant: string;
   dateNaissance: string;
   classeDemandee: string;
-  anneeScolaire: string; // Ex: '2027-2028'
+  anneeScolaire: string;
   nomParent: string;
   telephoneParent: string;
   emailParent?: string;
@@ -87,8 +114,8 @@ export interface AdmissionRequest {
   notes?: string;
   motifRefus?: string;
   dateTraitement?: string;
-  
-  // Paramètres du bulletin du 3ème trimestre et transfert
+
+  // Pièces justificatives : Bulletin du 3ème trimestre & Extrait de naissance
   estNouveauTransfert: boolean;
   etablissementOrigine?: string;
   decisionBulletin: AcademicDecision;
@@ -96,21 +123,24 @@ export interface AdmissionRequest {
   motifVenue?: TransferReason;
   descriptionVenue?: string;
   bulletinNomFichier?: string;
-  bulletinUrl?: string; // Data URL ou image du document réel téléversé
+  bulletinUrl?: string;
+  extraitNaissanceNomFichier?: string;
+  extraitNaissanceUrl?: string;
   montantDon: number;
 }
 
 export interface Payment {
   id: string;
   reference: string;
+  parentCompteId?: string;
   studentId: string;
   studentMatricule: string;
   studentNom: string;
   studentClasse: string;
-  anneeScolaire?: string; // Ex: '2027-2028'
-  montant: number; // Montant total encaissé (scolarité + don)
+  anneeScolaire?: string;
+  montant: number;
   montantScolarite: number;
-  montantDon: number; // Don spécifique pour œuvres/soutien
+  montantDon: number;
   mode: PaymentMethod;
   telephonePayeur?: string;
   nomPayeur: string;
@@ -118,18 +148,40 @@ export interface Payment {
   encaissePar: 'PARENT_EN_LIGNE' | 'SECRETAIRE_GUICHET';
   agentNom?: string;
   codeOtp?: string;
+  qrSignature?: string;
   dateValidationSecretaire?: string;
   motifRejetPaiement?: string;
   date: string;
   notes?: string;
 }
 
+export interface ReceiptVerificationResult {
+  found: boolean;
+  authentic: boolean;
+  signatureValid: boolean;
+  receipt: {
+    reference: string;
+    anneeScolaire: string;
+    studentMatricule: string;
+    studentNom: string;
+    studentClasse: string;
+    montant: number;
+    montantScolarite: number;
+    montantDon: number;
+    mode: PaymentMethod;
+    encaissePar: string;
+    statut: PaymentStatus;
+    agentNom: string;
+    date: string;
+  } | null;
+}
+
 export interface SchoolInfo {
   nom: string;
   devise: string;
   slogan: string;
-  anneeScolaire: string; // Ex: '2027 - 2028'
-  anneePrecedente: string; // Ex: '2026 - 2027'
+  anneeScolaire: string;
+  anneePrecedente: string;
   telephone: string;
   email: string;
   adresse: string;
@@ -138,8 +190,9 @@ export interface SchoolInfo {
   agrementMinisteriel: string;
 }
 
-export type AuditActionType = 
+export type AuditActionType =
   | 'CONNEXION'
+  | 'CREATION_AGENT'
   | 'MODIFICATION_TARIF'
   | 'VALIDATION_ADMISSION'
   | 'REFUS_ADMISSION'
@@ -163,4 +216,3 @@ export interface AuditLog {
   details?: Record<string, unknown>;
   niveauGravite: 'INFO' | 'AVERTISSEMENT' | 'CRITIQUE';
 }
-

@@ -1,5 +1,5 @@
 import { AdmissionRequest, Payment, SchoolInfo, Student, TuitionTariff, AuditLog, AuditActionType } from '../types';
-import { SupabaseSyncService } from './supabaseClient';
+import { getActiveAuthScope, getParentAccount, getStaffSession, SupabaseSyncService } from './supabaseClient';
 
 export const CURRENT_SCHOOL_YEAR = '2027-2028';
 export const PREVIOUS_SCHOOL_YEAR = '2026-2027';
@@ -202,6 +202,24 @@ const STORAGE_KEYS = {
   OUTBOX: 'edupay_sync_outbox_v5',
 };
 
+// Nettoyer d'anciens caches globaux non isolés par compte s'ils existent encore
+if (typeof window !== 'undefined') {
+  try {
+    [
+      STORAGE_KEYS.STUDENTS,
+      STORAGE_KEYS.ADMISSIONS,
+      STORAGE_KEYS.PAYMENTS,
+      STORAGE_KEYS.AUDIT_LOGS,
+      STORAGE_KEYS.OUTBOX,
+      'edupay_parent_read_messages_v5',
+    ].forEach((legacyKey) => {
+      localStorage.removeItem(legacyKey);
+    });
+  } catch {
+    // ignore storage cleanup errors
+  }
+}
+
 export type OutboxKind = 'ELEVE' | 'INSCRIPTION' | 'DEMANDE' | 'PAIEMENT' | 'AUDIT' | 'TARIF';
 
 export interface OutboxEntry {
@@ -216,6 +234,11 @@ export interface OutboxEntry {
 type Listener = () => void;
 const listeners = new Set<Listener>();
 const memoryFallbackStore: Record<string, string> = {};
+let activeStoreScope = 'public';
+
+function scopedKey(baseKey: string): string {
+  return `${baseKey}__${activeStoreScope}`;
+}
 
 function safeGetItem(key: string): string | null {
   if (typeof window === 'undefined') return null;
@@ -234,10 +257,12 @@ function safeSetItem(key: string, value: unknown) {
     localStorage.setItem(key, serialized);
   } catch (err) {
     console.warn(`[SchoolStore] Quota localStorage dépassé pour ${key}, nettoyage des aperçus lourds...`, err);
-    if (key === STORAGE_KEYS.ADMISSIONS && Array.isArray(value)) {
+    if (key.startsWith(STORAGE_KEYS.ADMISSIONS) && Array.isArray(value)) {
       try {
         const trimmed = value.map((item, idx) =>
-          idx === 0 ? item : { ...item, bulletinUrl: undefined }
+          idx === 0
+            ? item
+            : { ...item, bulletinUrl: undefined, extraitNaissanceUrl: undefined }
         );
         const trimmedStr = JSON.stringify(trimmed);
         memoryFallbackStore[key] = trimmedStr;
@@ -245,7 +270,11 @@ function safeSetItem(key: string, value: unknown) {
         return;
       } catch {
         try {
-          const minimal = value.map((item) => ({ ...item, bulletinUrl: undefined }));
+          const minimal = value.map((item) => ({
+            ...item,
+            bulletinUrl: undefined,
+            extraitNaissanceUrl: undefined,
+          }));
           const minimalStr = JSON.stringify(minimal);
           localStorage.setItem(key, minimalStr);
           return;
@@ -253,22 +282,16 @@ function safeSetItem(key: string, value: unknown) {
           // Keep in-memory fallback only
         }
       }
-    } else if (key === STORAGE_KEYS.OUTBOX && Array.isArray(value)) {
+    } else if (key.startsWith(STORAGE_KEYS.OUTBOX) && Array.isArray(value)) {
       try {
-        const trimmed = value.map((entry: OutboxEntry) => {
-          const obs = entry?.payload?.observations_secretaire;
-          if (typeof obs === 'string' && obs.includes('[BULLETIN_IMG]')) {
-            const cleanObs = obs.replace(/\[BULLETIN_IMG\][\s\S]*?\[\/BULLETIN_IMG\]\s*/g, '').trim();
-            return {
-              ...entry,
-              payload: {
-                ...entry.payload,
-                observations_secretaire: cleanObs || undefined,
-              },
-            };
-          }
-          return entry;
-        });
+        const trimmed = value.map((entry: OutboxEntry) => ({
+          ...entry,
+          payload: {
+            ...entry.payload,
+            bulletin_url: undefined,
+            extrait_naissance_url: undefined,
+          },
+        }));
         const trimmedStr = JSON.stringify(trimmed);
         memoryFallbackStore[key] = trimmedStr;
         localStorage.setItem(key, trimmedStr);
@@ -279,12 +302,6 @@ function safeSetItem(key: string, value: unknown) {
   }
 }
 
-function encodeAdmissionObservations(notes?: string, bulletinUrl?: string): string | undefined {
-  const hasImg = bulletinUrl && bulletinUrl.startsWith('data:image') && bulletinUrl.length <= 160000;
-  if (!hasImg) return notes || undefined;
-  return `[BULLETIN_IMG]${bulletinUrl}[/BULLETIN_IMG]${notes ? `\n${notes}` : ''}`;
-}
-
 function notifyListeners() {
   listeners.forEach((cb) => cb());
   if (typeof window !== 'undefined') {
@@ -293,6 +310,21 @@ function notifyListeners() {
 }
 
 export class SchoolStore {
+  static setScope(scope: string) {
+    const clean = (scope || 'public').replace(/[^a-zA-Z0-9_:-]/g, '_');
+    if (activeStoreScope !== clean) {
+      activeStoreScope = clean;
+      notifyListeners();
+    }
+  }
+
+  static getScope(): string {
+    return activeStoreScope;
+  }
+
+  private static getActiveStaffAuthor(): string {
+    return getStaffSession()?.author || 'Secrétaire Principale';
+  }
   /* ==========================================================================
      TARIFS DE SCOLARITÉ DYNAMIQUES (Synchronisé Supabase)
      ========================================================================== */
@@ -361,7 +393,7 @@ export class SchoolStore {
 
     this.addAuditLog({
       typeAction: 'MODIFICATION_TARIF',
-      auteur: 'Secrétaire Principale',
+      auteur: this.getActiveStaffAuthor(),
       description: `Mise à jour tarif ${updated.niveau} (${updated.anneeScolaire}) : Scolarité ${updated.montantScolarite.toLocaleString()} F, Total ${updated.totalExigible.toLocaleString()} FCFA`,
       details: { niveau: updated.niveau, annee: updated.anneeScolaire, total: updated.totalExigible },
       niveauGravite: 'AVERTISSEMENT',
@@ -393,7 +425,7 @@ export class SchoolStore {
 
     this.addAuditLog({
       typeAction: 'MODIFICATION_TARIF',
-      auteur: 'Secrétaire Principale',
+      auteur: this.getActiveStaffAuthor(),
       description: `Nouveau barème tarifaire configuré pour ${newTariff.niveau} (${newTariff.anneeScolaire}) : Total ${newTariff.totalExigible.toLocaleString()} FCFA`,
       details: { niveau: newTariff.niveau, total: newTariff.totalExigible },
       niveauGravite: 'INFO',
@@ -441,9 +473,9 @@ export class SchoolStore {
      GESTION DES ÉLÈVES & IMPORTATION EN MASSE
      ========================================================================== */
   static getStudents(): Student[] {
-    if (typeof window === 'undefined') return [];
+    if (typeof window === 'undefined' || activeStoreScope === 'public') return [];
     try {
-      const stored = safeGetItem(STORAGE_KEYS.STUDENTS);
+      const stored = safeGetItem(scopedKey(STORAGE_KEYS.STUDENTS));
       if (stored) return JSON.parse(stored);
     } catch {
       // fallback
@@ -453,7 +485,9 @@ export class SchoolStore {
 
   static saveStudents(students: Student[]) {
     if (typeof window !== 'undefined') {
-      safeSetItem(STORAGE_KEYS.STUDENTS, students);
+      if (activeStoreScope !== 'public') {
+        safeSetItem(scopedKey(STORAGE_KEYS.STUDENTS), students);
+      }
       notifyListeners();
     }
   }
@@ -510,7 +544,7 @@ export class SchoolStore {
 
     this.addAuditLog({
       typeAction: 'INSCRIPTION_MANUELLE',
-      auteur: 'Secrétaire Principale',
+      auteur: this.getActiveStaffAuthor(),
       description: `Inscription de l'élève ${newStudent.prenom} ${newStudent.nom} en classe de ${newStudent.classe} (Matricule: ${newStudent.matricule})`,
       details: { matricule: newStudent.matricule, classe: newStudent.classe, scolarite: newStudent.scolariteTotale },
       niveauGravite: 'INFO',
@@ -526,33 +560,7 @@ export class SchoolStore {
       students[index] = student;
       this.saveStudents(students);
 
-      SupabaseSyncService.syncEleveToSupabase({
-        id: student.id,
-        matricule: student.matricule,
-        nom: student.nom,
-        prenom: student.prenom,
-        date_naissance: student.dateNaissance,
-        classe: student.classe,
-        annee_scolaire: student.anneeScolaire,
-        scolarite_totale: student.scolariteTotale,
-        montant_paye: student.montantPaye,
-        montant_don_total: student.montantDonTotal,
-        nom_parent: student.nomParent,
-        telephone_parent: student.telephoneParent,
-        email_parent: student.emailParent,
-        adresse_domicile: student.adresse,
-        annee_origine: student.anneeOrigine,
-        classe_precedente: student.classePrecedente,
-        statut_fin_annee: student.statutFinAnnee,
-        statut_reinscription: student.statutReinscription,
-        decision_bulletin: student.decisionBulletin,
-        moyenne_annuelle: student.moyenneAnnuelle,
-        etablissement_origine: student.etablissementOrigine,
-        motif_venue: student.motifVenue,
-        description_motif: student.descriptionVenue,
-        bulletin_nom_fichier: student.bulletinNomFichier,
-        statut_inscription: student.statut,
-      });
+      SupabaseSyncService.syncEleveToSupabase(this.buildStudentPayload(student));
     }
   }
 
@@ -566,7 +574,7 @@ export class SchoolStore {
         SupabaseSyncService.deleteEleveFromSupabase(student.id, student.matricule);
         this.addAuditLog({
           typeAction: 'SUPPRESSION_ELEVE',
-          auteur: 'Secrétaire Principale',
+          auteur: this.getActiveStaffAuthor(),
           description: `Suppression définitive de l'élève ${student.prenom} ${student.nom} (Matricule: ${student.matricule}, Classe: ${student.classe})`,
           details: { studentId: student.id, matricule: student.matricule, classe: student.classe },
           niveauGravite: 'CRITIQUE',
@@ -651,31 +659,12 @@ export class SchoolStore {
     this.saveStudents(updatedList);
 
     // Sync in background to Supabase (batch upsert eleves)
-    const recordsToSync = updatedList.map((s) => ({
-      id: s.id,
-      matricule: s.matricule,
-      nom: s.nom,
-      prenom: s.prenom,
-      date_naissance: s.dateNaissance,
-      classe: s.classe,
-      annee_scolaire: s.anneeScolaire,
-      scolarite_totale: s.scolariteTotale,
-      montant_paye: s.montantPaye || 0,
-      montant_don_total: s.montantDonTotal || 0,
-      nom_parent: s.nomParent,
-      telephone_parent: s.telephoneParent,
-      annee_origine: s.anneeOrigine,
-      classe_precedente: s.classePrecedente,
-      statut_fin_annee: s.statutFinAnnee,
-      statut_reinscription: s.statutReinscription,
-      moyenne_annuelle: s.moyenneAnnuelle,
-      statut_inscription: s.statut,
-    }));
+    const recordsToSync = updatedList.map((s) => this.buildStudentPayload(s));
     SupabaseSyncService.syncElevesBatchToSupabase(recordsToSync);
 
     this.addAuditLog({
       typeAction: 'IMPORT_MASSIF',
-      auteur: 'Secrétaire Principale',
+      auteur: this.getActiveStaffAuthor(),
       description: `Importation en masse : ${created} nouvel(s) élève(s) créé(s), ${updated} mis à jour (${records.length} lignes traitées)`,
       details: { total: records.length, created, updated, anneeOrigine, anneeCible },
       niveauGravite: 'AVERTISSEMENT',
@@ -708,6 +697,17 @@ export class SchoolStore {
 
     this.saveStudents(students);
 
+    if (getActiveAuthScope() === 'parent' && getParentAccount()) {
+      void SupabaseSyncService.parentReenrollStudent({
+        studentId: student.id,
+        targetClass: nouvelleClasse,
+        nomParent: options?.nomParent || student.nomParent,
+        telephoneParent: options?.telephoneParent || student.telephoneParent,
+        anneeScolaire: CURRENT_SCHOOL_YEAR,
+      });
+      return student;
+    }
+
     // Sync sequentially (eleve must exist in Postgres before inscriptions_annuelles FK)
     const stuPayload = this.buildStudentPayload(student);
     const inscPayload = {
@@ -733,7 +733,7 @@ export class SchoolStore {
 
     this.addAuditLog({
       typeAction: 'REINSCRIPTION_EFFECTUEE',
-      auteur: 'Secrétaire Principale',
+      auteur: this.getActiveStaffAuthor(),
       description: `Réinscription confirmée pour ${student.prenom} ${student.nom} (${student.matricule}) en classe de ${student.classe}`,
       details: { matricule: student.matricule, classe: student.classe, scolariteTotale: nouvelleScolariteTotale },
       niveauGravite: 'INFO',
@@ -777,9 +777,9 @@ export class SchoolStore {
      FILE D'ATTENTE DE SYNCHRONISATION (OUTBOX ANTI-PERTE)
      ========================================================================== */
   static getOutbox(): OutboxEntry[] {
-    if (typeof window === 'undefined') return [];
+    if (typeof window === 'undefined' || activeStoreScope === 'public') return [];
     try {
-      const stored = safeGetItem(STORAGE_KEYS.OUTBOX);
+      const stored = safeGetItem(scopedKey(STORAGE_KEYS.OUTBOX));
       if (stored) {
         const parsed = JSON.parse(stored);
         return Array.isArray(parsed) ? parsed : [];
@@ -791,8 +791,8 @@ export class SchoolStore {
   }
 
   static saveOutbox(entries: OutboxEntry[]) {
-    if (typeof window !== 'undefined') {
-      safeSetItem(STORAGE_KEYS.OUTBOX, entries);
+    if (typeof window !== 'undefined' && activeStoreScope !== 'public') {
+      safeSetItem(scopedKey(STORAGE_KEYS.OUTBOX), entries);
     }
   }
 
@@ -886,6 +886,7 @@ export class SchoolStore {
       scolarite_totale: student.scolariteTotale,
       montant_paye: student.montantPaye || 0,
       montant_don_total: student.montantDonTotal || 0,
+      parent_compte_id: student.parentCompteId || null,
       nom_parent: student.nomParent,
       telephone_parent: student.telephoneParent,
       email_parent: student.emailParent,
@@ -900,6 +901,7 @@ export class SchoolStore {
       motif_venue: student.motifVenue,
       description_motif: student.descriptionVenue,
       bulletin_nom_fichier: student.bulletinNomFichier,
+      extrait_naissance_nom_fichier: student.extraitNaissanceNomFichier,
       statut_inscription: student.statut,
     };
   }
@@ -909,6 +911,7 @@ export class SchoolStore {
       id: payment.id,
       reference_quittance: payment.reference,
       annee_scolaire: payment.anneeScolaire || CURRENT_SCHOOL_YEAR,
+      parent_compte_id: payment.parentCompteId || getParentAccount()?.id || null,
       eleve_id: payment.studentId,
       eleve_matricule: payment.studentMatricule,
       nom_eleve: payment.studentNom,
@@ -933,12 +936,14 @@ export class SchoolStore {
         ? Math.round(Math.min(20, Math.max(0, Number(req.moyenneAnnuelle))) * 100) / 100
         : undefined;
     const safeFileName = req.bulletinNomFichier ? req.bulletinNomFichier.slice(0, 200) : undefined;
+    const safeExtraitName = req.extraitNaissanceNomFichier ? req.extraitNaissanceNomFichier.slice(0, 200) : undefined;
     const statutUpper =
       req.statut === 'accepte' ? 'ACCEPTE' : req.statut === 'refuse' ? 'REFUSE' : 'EN_ATTENTE';
 
     return {
       id: req.id,
       annee_scolaire: req.anneeScolaire || CURRENT_SCHOOL_YEAR,
+      parent_compte_id: req.parentCompteId || getParentAccount()?.id || null,
       nom_enfant: req.nomEnfant.slice(0, 100),
       prenom_enfant: req.prenomEnfant.slice(0, 100),
       date_naissance: req.dateNaissance || '2018-01-01',
@@ -954,7 +959,10 @@ export class SchoolStore {
       motif_venue: req.motifVenue,
       description_motif: req.descriptionVenue?.trim() || "Demande d'inscription en ligne",
       bulletin_nom_fichier: safeFileName,
-      observations_secretaire: encodeAdmissionObservations(req.notes, req.bulletinUrl),
+      bulletin_url: req.bulletinUrl || null,
+      extrait_naissance_nom_fichier: safeExtraitName || null,
+      extrait_naissance_url: req.extraitNaissanceUrl || null,
+      observations_secretaire: req.notes || null,
       montant_don: Number(req.montantDon) || 0,
       statut_admission: statutUpper,
       matricule_attribue: req.matriculeAttribue,
@@ -967,9 +975,9 @@ export class SchoolStore {
      PAIEMENTS & ENCAISSEMENTS
      ========================================================================== */
   static getPayments(): Payment[] {
-    if (typeof window === 'undefined') return [];
+    if (typeof window === 'undefined' || activeStoreScope === 'public') return [];
     try {
-      const stored = safeGetItem(STORAGE_KEYS.PAYMENTS);
+      const stored = safeGetItem(scopedKey(STORAGE_KEYS.PAYMENTS));
       if (stored) return JSON.parse(stored);
     } catch {
       // fallback
@@ -979,7 +987,9 @@ export class SchoolStore {
 
   static savePayments(payments: Payment[]) {
     if (typeof window !== 'undefined') {
-      safeSetItem(STORAGE_KEYS.PAYMENTS, payments);
+      if (activeStoreScope !== 'public') {
+        safeSetItem(scopedKey(STORAGE_KEYS.PAYMENTS), payments);
+      }
       notifyListeners();
     }
   }
@@ -1056,7 +1066,8 @@ export class SchoolStore {
    * Validation définitive d'un paiement Mobile Money par la secrétaire
    * (après vérification de la réception effective des fonds sur le compte de l'école)
    */
-  static validateMobileMoneyPayment(paymentId: string, agentNom: string = 'Secrétaire Principale'): Payment | null {
+  static validateMobileMoneyPayment(paymentId: string, agentNom?: string): Payment | null {
+    const resolvedAgent = agentNom || this.getActiveStaffAuthor();
     const payments = this.getPayments();
     const index = payments.findIndex((p) => p.id === paymentId);
     if (index === -1) return null;
@@ -1064,7 +1075,7 @@ export class SchoolStore {
     const payment = { ...payments[index] };
     payment.statut = 'SUCCES';
     payment.dateValidationSecretaire = new Date().toISOString();
-    payment.agentNom = agentNom;
+    payment.agentNom = resolvedAgent;
     payment.encaissePar = 'SECRETAIRE_GUICHET';
     payments[index] = payment;
     this.savePayments(payments);
@@ -1084,7 +1095,7 @@ export class SchoolStore {
 
     const payPayload = this.buildPaymentPayload(
       payment,
-      `Paiement Mobile Money vérifié et validé par ${agentNom}. Reçu officiel débloqué.`
+      `Paiement Mobile Money vérifié et validé par ${resolvedAgent}. Reçu officiel débloqué.`
     );
     this.enqueueOutbox('PAIEMENT', payment.id, payPayload);
 
@@ -1105,7 +1116,7 @@ export class SchoolStore {
 
     this.addAuditLog({
       typeAction: 'VALIDATION_PAIEMENT_MOBILE_MONEY',
-      auteur: agentNom,
+      auteur: resolvedAgent,
       description: `Validation & Quittance émise pour ${payment.studentNom} (${payment.studentClasse}) - Montant vérifié : ${payment.montant.toLocaleString()} FCFA (${payment.mode})`,
       details: {
         reference: payment.reference,
@@ -1149,7 +1160,7 @@ export class SchoolStore {
 
     this.addAuditLog({
       typeAction: 'REJET_PAIEMENT_MOBILE_MONEY',
-      auteur: 'Secrétaire Principale',
+      auteur: this.getActiveStaffAuthor(),
       description: `Rejet du paiement Mobile Money de ${payment.montant.toLocaleString()} FCFA pour ${payment.studentNom} - Motif : ${motif}`,
       details: { reference: payment.reference, montant: payment.montant, motif },
       niveauGravite: 'CRITIQUE',
@@ -1162,9 +1173,9 @@ export class SchoolStore {
      DEMANDES D'ADMISSION EN LIGNE
      ========================================================================== */
   static getAdmissions(): AdmissionRequest[] {
-    if (typeof window === 'undefined') return [];
+    if (typeof window === 'undefined' || activeStoreScope === 'public') return [];
     try {
-      const stored = safeGetItem(STORAGE_KEYS.ADMISSIONS);
+      const stored = safeGetItem(scopedKey(STORAGE_KEYS.ADMISSIONS));
       if (stored) return JSON.parse(stored);
     } catch {
       // fallback
@@ -1174,7 +1185,9 @@ export class SchoolStore {
 
   static saveAdmissions(admissions: AdmissionRequest[]) {
     if (typeof window !== 'undefined') {
-      safeSetItem(STORAGE_KEYS.ADMISSIONS, admissions);
+      if (activeStoreScope !== 'public') {
+        safeSetItem(scopedKey(STORAGE_KEYS.ADMISSIONS), admissions);
+      }
       notifyListeners();
     }
   }
@@ -1190,11 +1203,16 @@ export class SchoolStore {
         ? Math.round(Math.min(20, Math.max(0, Number(request.moyenneAnnuelle))) * 100) / 100
         : undefined;
     const safeFileName = request.bulletinNomFichier ? request.bulletinNomFichier.slice(0, 200) : undefined;
+    const safeExtraitName = request.extraitNaissanceNomFichier
+      ? request.extraitNaissanceNomFichier.slice(0, 200)
+      : undefined;
 
     const newReq: AdmissionRequest = {
       ...request,
+      parentCompteId: request.parentCompteId || getParentAccount()?.id,
       moyenneAnnuelle: safeAvg,
       bulletinNomFichier: safeFileName,
+      extraitNaissanceNomFichier: safeExtraitName,
       id: 'ADM_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       dateDemande: new Date().toISOString(),
       statut: 'en_attente',
@@ -1280,6 +1298,7 @@ export class SchoolStore {
       scolariteTotale,
       montantPaye: 0,
       montantDonTotal: req.montantDon || 0,
+      parentCompteId: req.parentCompteId,
       nomParent: req.nomParent,
       telephoneParent: req.telephoneParent,
       emailParent: req.emailParent,
@@ -1293,6 +1312,7 @@ export class SchoolStore {
       motifVenue: req.motifVenue,
       descriptionVenue: req.descriptionVenue,
       bulletinNomFichier: req.bulletinNomFichier,
+      extraitNaissanceNomFichier: req.extraitNaissanceNomFichier,
     };
 
     students.unshift(student);
@@ -1340,7 +1360,7 @@ export class SchoolStore {
 
     this.addAuditLog({
       typeAction: 'VALIDATION_ADMISSION',
-      auteur: 'Secrétaire Principale',
+      auteur: this.getActiveStaffAuthor(),
       description: `Validation du dossier d'admission de ${req.prenomEnfant} ${req.nomEnfant} (${req.classeDemandee}). Matricule attribué : ${student.matricule}`,
       details: { requestId: req.id, matricule: student.matricule, classe: req.classeDemandee, scolariteTotale },
       niveauGravite: 'INFO',
@@ -1374,7 +1394,7 @@ export class SchoolStore {
 
       this.addAuditLog({
         typeAction: 'REFUS_ADMISSION',
-        auteur: 'Secrétaire Principale',
+        auteur: this.getActiveStaffAuthor(),
         description: `Refus de la demande d'admission pour ${req.prenomEnfant} ${req.nomEnfant} (${req.classeDemandee}). Motif envoyé au parent : ${req.motifRefus}`,
         details: { requestId: req.id, motif: req.motifRefus },
         niveauGravite: 'AVERTISSEMENT',
@@ -1386,9 +1406,9 @@ export class SchoolStore {
      JOURNAL D'AUDIT & TRAÇABILITÉ (Transparence totale)
      ========================================================================== */
   static getAuditLogs(): AuditLog[] {
-    if (typeof window === 'undefined') return [];
+    if (typeof window === 'undefined' || activeStoreScope === 'public') return [];
     try {
-      const stored = safeGetItem(STORAGE_KEYS.AUDIT_LOGS);
+      const stored = safeGetItem(scopedKey(STORAGE_KEYS.AUDIT_LOGS));
       if (stored) return JSON.parse(stored);
     } catch {
       // fallback
@@ -1398,7 +1418,9 @@ export class SchoolStore {
 
   static saveAuditLogs(logs: AuditLog[]) {
     if (typeof window !== 'undefined') {
-      safeSetItem(STORAGE_KEYS.AUDIT_LOGS, logs);
+      if (activeStoreScope !== 'public') {
+        safeSetItem(scopedKey(STORAGE_KEYS.AUDIT_LOGS), logs);
+      }
       notifyListeners();
     }
   }

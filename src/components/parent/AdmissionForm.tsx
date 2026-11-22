@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Send, 
   CheckCircle2, 
@@ -11,11 +11,12 @@ import {
   FileCheck, 
   HeartHandshake, 
   School,
-  RefreshCw
+  RefreshCw,
+  Mail
 } from 'lucide-react';
 import { SchoolStore, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { SyncService } from '../../services/sync';
-import { AdmissionRequest, AcademicDecision, TransferReason } from '../../types';
+import { AdmissionRequest, AcademicDecision, TransferReason, ParentAccount } from '../../types';
 
 async function compressImageToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -63,21 +64,27 @@ async function compressImageToDataUrl(file: File): Promise<string> {
 }
 
 interface AdmissionFormProps {
+  parentAccount?: ParentAccount | null;
   onSuccess: (req: AdmissionRequest) => void;
+  onGoToMessages?: () => void;
 }
 
-export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
+export const AdmissionForm: React.FC<AdmissionFormProps> = ({
+  parentAccount,
+  onSuccess,
+  onGoToMessages,
+}) => {
   // Identity
   const [nomEnfant, setNomEnfant] = useState('');
   const [prenomEnfant, setPrenomEnfant] = useState('');
   const [dateNaissance, setDateNaissance] = useState('');
   const [classeDemandee, setClasseDemandee] = useState('CP1');
-  const [nomParent, setNomParent] = useState('');
-  const [telephoneParent, setTelephoneParent] = useState('');
-  const [emailParent, setEmailParent] = useState('');
+  const [nomParent, setNomParent] = useState(parentAccount?.nomComplet || '');
+  const [telephoneParent, setTelephoneParent] = useState(parentAccount?.telephone || '');
+  const [emailParent, setEmailParent] = useState(parentAccount?.email || '');
   const [adresse, setAdresse] = useState('');
 
-  // Transfer & 3rd Term Report Card
+  // Transfer, 3rd Term Report Card & Extrait de naissance
   const [estNouveauTransfert, setEstNouveauTransfert] = useState(true);
   const [etablissementOrigine, setEtablissementOrigine] = useState('');
   const [decisionBulletin, setDecisionBulletin] = useState<AcademicDecision>('PASSAGE');
@@ -87,6 +94,9 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
   const [bulletinFichier, setBulletinFichier] = useState<string>('bulletin_3eme_trimestre_officiel.pdf');
   const [bulletinUrl, setBulletinUrl] = useState<string>('');
   const [hasUploadedFile, setHasUploadedFile] = useState(false);
+  const [extraitFichier, setExtraitFichier] = useState<string>('extrait_naissance_eleve.pdf');
+  const [extraitUrl, setExtraitUrl] = useState<string>('');
+  const [hasUploadedExtrait, setHasUploadedExtrait] = useState(false);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
 
   // Donation / Support funds
@@ -95,6 +105,14 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
 
   const [notes, setNotes] = useState('');
   const [submittedRequest, setSubmittedRequest] = useState<AdmissionRequest | null>(null);
+
+  useEffect(() => {
+    if (parentAccount) {
+      setNomParent((prev) => prev || parentAccount.nomComplet || '');
+      setTelephoneParent((prev) => prev || parentAccount.telephone || '');
+      setEmailParent((prev) => prev || parentAccount.email || '');
+    }
+  }, [parentAccount]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{
     synced: boolean;
@@ -131,19 +149,22 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
     "D'",
   ];
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0]) return;
-    const file = e.target.files[0];
-    setBulletinFichier(file.name);
-    setHasUploadedFile(true);
+  const processAttachment = async (
+    file: File,
+    onName: (name: string) => void,
+    onUrl: (url: string) => void,
+    onFlag: (flag: boolean) => void
+  ) => {
+    onName(file.name);
+    onFlag(true);
     setError('');
     setIsProcessingFile(true);
 
     try {
       if (file.type.startsWith('image/')) {
         const compressed = await compressImageToDataUrl(file);
-        setBulletinUrl(compressed);
-      } else if (file.size <= 160 * 1024) {
+        onUrl(compressed);
+      } else if (file.size <= 220 * 1024) {
         const dataUrl = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onload = (uploadEvent) => {
@@ -152,16 +173,35 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
           reader.onerror = () => resolve('');
           reader.readAsDataURL(file);
         });
-        setBulletinUrl(dataUrl);
+        onUrl(dataUrl);
       } else {
-        // Large PDF: keep filename metadata without overflowing mobile localStorage
-        setBulletinUrl('');
+        onUrl('');
       }
     } catch {
-      setBulletinUrl('');
+      onUrl('');
     } finally {
       setIsProcessingFile(false);
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    await processAttachment(
+      e.target.files[0],
+      setBulletinFichier,
+      setBulletinUrl,
+      setHasUploadedFile
+    );
+  };
+
+  const handleExtraitUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    await processAttachment(
+      e.target.files[0],
+      setExtraitFichier,
+      setExtraitUrl,
+      setHasUploadedExtrait
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -185,6 +225,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
       const parsedMoyenne = moyenneAnnuelle.trim() === '' ? undefined : Number(moyenneAnnuelle);
 
       const submitPromise = SchoolStore.addAdmissionRequestAsync({
+        parentCompteId: parentAccount?.id,
         nomEnfant: nomEnfant.trim(),
         prenomEnfant: prenomEnfant.trim(),
         dateNaissance: dateNaissance || '2018-01-01',
@@ -202,6 +243,8 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
         descriptionVenue: descriptionVenue.trim() || 'Réinscription interne / Nouveau cycle',
         bulletinNomFichier: bulletinFichier,
         bulletinUrl: bulletinUrl || undefined,
+        extraitNaissanceNomFichier: extraitFichier,
+        extraitNaissanceUrl: extraitUrl || undefined,
         montantDon: donValue,
       });
 
@@ -256,15 +299,17 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
     setNomEnfant('');
     setPrenomEnfant('');
     setDateNaissance('');
-    setNomParent('');
-    setTelephoneParent('');
-    setEmailParent('');
+    setNomParent(parentAccount?.nomComplet || '');
+    setTelephoneParent(parentAccount?.telephone || '');
+    setEmailParent(parentAccount?.email || '');
     setAdresse('');
     setNotes('');
     setDescriptionVenue('');
     setEtablissementOrigine('');
     setHasUploadedFile(false);
     setBulletinUrl('');
+    setHasUploadedExtrait(false);
+    setExtraitUrl('');
     setSubmittedRequest(null);
     setSyncStatus(null);
     setError('');
@@ -323,6 +368,14 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
             <span className="text-slate-500">Bulletin joint :</span>
             <span className="font-mono text-slate-800 truncate max-w-[210px]">{submittedRequest.bulletinNomFichier}</span>
           </div>
+          {submittedRequest.extraitNaissanceNomFichier && (
+            <div className="flex flex-wrap justify-between gap-1">
+              <span className="text-slate-500">Extrait de naissance :</span>
+              <span className="font-mono text-slate-800 truncate max-w-[210px]">
+                {submittedRequest.extraitNaissanceNomFichier}
+              </span>
+            </div>
+          )}
           {submittedRequest.montantDon > 0 && (
             <div className="flex justify-between border-t border-slate-200 pt-1.5">
               <span className="text-slate-500">Don / Soutien prévu :</span>
@@ -333,12 +386,24 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
           )}
         </div>
 
-        <button
-          onClick={handleReset}
-          className="w-full sm:w-auto px-5 py-2.5 text-xs font-semibold rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer"
-        >
-          Inscrire un autre enfant
-        </button>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">
+          {onGoToMessages && (
+            <button
+              type="button"
+              onClick={onGoToMessages}
+              className="w-full sm:w-auto px-5 py-2.5 text-xs font-bold rounded-xl bg-slate-900 hover:bg-slate-800 text-white transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Consulter mes Messages & Suivi</span>
+            </button>
+          )}
+          <button
+            onClick={handleReset}
+            className="w-full sm:w-auto px-5 py-2.5 text-xs font-semibold rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white transition-colors cursor-pointer"
+          >
+            Inscrire un autre enfant
+          </button>
+        </div>
       </div>
     );
   }
@@ -537,23 +602,48 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({ onSuccess }) => {
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
                 <Upload className="w-3.5 h-3.5 text-slate-400" />
-                Fichier du bulletin du 3ème trimestre
+                Bulletin du 3ème trimestre *
               </label>
               <label className="flex items-center justify-between gap-2 px-3 py-2 border border-dashed border-slate-300 rounded-xl bg-white hover:bg-slate-50 cursor-pointer">
                 <span className="text-[11px] text-slate-600 truncate min-w-0 flex-1">
                   {isProcessingFile
-                    ? 'Optimisation de l\'image...'
+                    ? 'Optimisation...'
                     : hasUploadedFile
                     ? bulletinFichier
                     : 'Téléverser le bulletin (PDF / Photo)'}
                 </span>
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded shrink-0">
-                  {isProcessingFile ? '...' : hasUploadedFile ? 'Fichier prêt' : 'Parcourir'}
+                  {isProcessingFile ? '...' : hasUploadedFile ? 'Prêt' : 'Parcourir'}
                 </span>
                 <input
                   type="file"
                   accept="image/*,.pdf"
                   onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                <FileCheck className="w-3.5 h-3.5 text-emerald-700" />
+                Extrait d'acte de naissance de l'élève *
+              </label>
+              <label className="flex items-center justify-between gap-2 px-3 py-2 border border-dashed border-emerald-300 rounded-xl bg-white hover:bg-emerald-50/40 cursor-pointer">
+                <span className="text-[11px] text-slate-600 truncate min-w-0 flex-1">
+                  {isProcessingFile
+                    ? 'Optimisation...'
+                    : hasUploadedExtrait
+                    ? extraitFichier
+                    : "Téléverser l'extrait de naissance (Photo ou PDF)"}
+                </span>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded shrink-0">
+                  {isProcessingFile ? '...' : hasUploadedExtrait ? 'Extrait prêt' : 'Joindre Extrait'}
+                </span>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={handleExtraitUpload}
                   className="hidden"
                 />
               </label>

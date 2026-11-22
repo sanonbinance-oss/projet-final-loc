@@ -1,4 +1,4 @@
-import { SupabaseSyncService } from './supabaseClient';
+import { SupabaseSyncService, getActiveAuthScope, getParentAccount } from './supabaseClient';
 import { Mappers } from './mappers';
 import { SchoolStore, CURRENT_SCHOOL_YEAR } from './store';
 import { Student, AdmissionRequest, Payment, TuitionTariff, AuditLog } from '../types';
@@ -24,7 +24,7 @@ let currentState: SyncState = {
   estEnCours: false,
   statut: 'synchronisation',
   derniereSynchro: null,
-  message: 'Initialisation de la synchronisation Vercel PostgreSQL...',
+  message: 'Initialisation...',
   messageErreur: null,
   nbDemandes: 0,
   nbEleves: 0,
@@ -42,9 +42,9 @@ let lastTriggerTime = 0;
 let eventListenersBound = false;
 
 function formatDbError(error?: string): string {
-  const msg = error || 'Impossible de joindre la base Vercel PostgreSQL.';
+  const msg = error || 'Impossible de joindre le serveur.';
   if (msg.includes('DATABASE_URL') || msg.includes('POSTGRES_URL') || msg.includes('non reliée')) {
-    return 'Base Vercel non reliée : connectez Neon / Postgres dans Vercel → Storage à votre projet puis redéployez.';
+    return 'Base de données non reliée.';
   }
   return msg;
 }
@@ -78,12 +78,6 @@ export class SyncService {
     };
   }
 
-  /**
-   * Lance la synchronisation bidirectionnelle complète via l'API Vercel PostgreSQL :
-   * 1. Vide la file d'attente locale (outbox) vers /api/db
-   * 2. Charge toutes les données à jour en 1 seule requête rapide
-   * 3. Maintient une actualisation automatique toutes les 6 secondes + reprise d'onglet/réseau
-   */
   static async initialiser() {
     if (typeof window === 'undefined') return;
 
@@ -116,7 +110,7 @@ export class SyncService {
         currentState.estConnecte = false;
         currentState.estEnCours = false;
         currentState.statut = 'erreur';
-        currentState.messageErreur = 'Appareil hors ligne : vérifiez votre connexion Internet mobile ou Wi-Fi.';
+        currentState.messageErreur = 'Appareil hors ligne : vérifiez votre connexion Internet.';
         notifierSync();
         syncInFlight = null;
         return;
@@ -128,19 +122,51 @@ export class SyncService {
       }
 
       try {
-        // 1. Tenter d'abord d'envoyer tout ce qui est en attente dans l'outbox locale
+        const expectedScope = getActiveAuthScope();
+        const expectedParentId = getParentAccount()?.id || null;
+
+        // 1. Vider la file d'attente locale (outbox) du scope actif
         const outboxResult = await SchoolStore.flushOutbox();
         currentState.nbEnAttenteEnvoi = outboxResult.remaining;
 
-        // 2. Télécharger toutes les tables en 1 seule requête HTTP optimisée
+        // 2. Télécharger les données autorisées pour le scope courant
         const cloud = await SupabaseSyncService.fetchAllFromCloud(CURRENT_SCHOOL_YEAR);
+
+        // Si l'utilisateur a changé d'espace/compte pendant la requête réseau, ignorer cette réponse obsolète
+        if (getActiveAuthScope() !== expectedScope || (getParentAccount()?.id || null) !== expectedParentId) {
+          return;
+        }
 
         if (!cloud.ok) {
           currentState.estConnecte = false;
           currentState.estEnCours = false;
           currentState.statut = 'erreur';
           currentState.messageErreur = formatDbError(cloud.error);
-          currentState.message = 'Synchronisation Vercel PostgreSQL interrompue';
+          currentState.message = 'Synchronisation interrompue';
+          notifierSync();
+          return;
+        }
+
+        // Tarifs publics toujours mis à jour
+        if (Array.isArray(cloud.tarifs) && cloud.tarifs.length > 0) {
+          const cloudTarifs: TuitionTariff[] = cloud.tarifs.map(Mappers.tarifFromSupabase);
+          SchoolStore.saveTarifs(cloudTarifs);
+        }
+
+        // Si visiteur non connecté (PUBLIC), vider strictement toutes données personnelles
+        if (cloud.scope === 'PUBLIC') {
+          SchoolStore.saveAdmissions([]);
+          SchoolStore.saveStudents([]);
+          SchoolStore.savePayments([]);
+          SchoolStore.saveAuditLogs([]);
+          currentState.nbDemandes = 0;
+          currentState.nbEleves = 0;
+          currentState.nbPaiements = 0;
+          currentState.estConnecte = true;
+          currentState.estEnCours = false;
+          currentState.statut = 'connecte';
+          currentState.messageErreur = null;
+          currentState.derniereSynchro = new Date().toLocaleTimeString('fr-FR');
           notifierSync();
           return;
         }
@@ -150,22 +176,32 @@ export class SyncService {
         const pendingEleveIds = new Set(outbox.filter((o) => o.kind === 'ELEVE').map((o) => o.recordId));
         const pendingPaiementIds = new Set(outbox.filter((o) => o.kind === 'PAIEMENT').map((o) => o.recordId));
 
-        // 1. Demandes d'admission
+        // 1. Demandes d'admission (source de vérité = cloud + éléments outbox non encore envoyés)
         if (Array.isArray(cloud.demandes)) {
           const cloudDemandes: AdmissionRequest[] = cloud.demandes.map(Mappers.demandeFromSupabase);
           const locales = SchoolStore.getAdmissions();
+          const localMap = new Map<string, AdmissionRequest>();
+          locales.forEach((d) => localMap.set(d.id, d));
 
           const map = new Map<string, AdmissionRequest>();
-          locales.forEach((d) => map.set(d.id, d));
           cloudDemandes.forEach((d) => {
-            const existing = map.get(d.id);
+            const existing = localMap.get(d.id);
             if (existing && pendingDemandeIds.has(d.id)) {
-              return;
+              map.set(d.id, existing);
+            } else {
+              map.set(d.id, {
+                ...d,
+                bulletinUrl: d.bulletinUrl || existing?.bulletinUrl,
+                extraitNaissanceUrl: d.extraitNaissanceUrl || existing?.extraitNaissanceUrl,
+              });
             }
-            map.set(d.id, {
-              ...d,
-              bulletinUrl: d.bulletinUrl || existing?.bulletinUrl,
-            });
+          });
+          // Ajouter les nouvelles demandes encore dans la file outbox
+          pendingDemandeIds.forEach((id) => {
+            if (!map.has(id)) {
+              const localItem = localMap.get(id);
+              if (localItem) map.set(id, localItem);
+            }
           });
 
           const fusion = Array.from(map.values()).sort(
@@ -180,15 +216,23 @@ export class SyncService {
         if (Array.isArray(cloud.eleves)) {
           const cloudEleves: Student[] = cloud.eleves.map(Mappers.eleveFromSupabase);
           const locales = SchoolStore.getStudents();
+          const localMap = new Map<string, Student>();
+          locales.forEach((s) => localMap.set(s.id, s));
 
           const map = new Map<string, Student>();
-          locales.forEach((s) => map.set(s.id, s));
           cloudEleves.forEach((s) => {
-            const existing = map.get(s.id);
+            const existing = localMap.get(s.id);
             if (existing && pendingEleveIds.has(s.id)) {
-              return;
+              map.set(s.id, existing);
+            } else {
+              map.set(s.id, s);
             }
-            map.set(s.id, s);
+          });
+          pendingEleveIds.forEach((id) => {
+            if (!map.has(id)) {
+              const localItem = localMap.get(id);
+              if (localItem) map.set(id, localItem);
+            }
           });
 
           const fusion = Array.from(map.values());
@@ -200,15 +244,23 @@ export class SyncService {
         if (Array.isArray(cloud.paiements)) {
           const cloudPaiements: Payment[] = cloud.paiements.map(Mappers.paiementFromSupabase);
           const locales = SchoolStore.getPayments();
+          const localMap = new Map<string, Payment>();
+          locales.forEach((p) => localMap.set(p.id, p));
 
           const map = new Map<string, Payment>();
-          locales.forEach((p) => map.set(p.id, p));
           cloudPaiements.forEach((p) => {
-            const existing = map.get(p.id);
+            const existing = localMap.get(p.id);
             if (existing && pendingPaiementIds.has(p.id)) {
-              return;
+              map.set(p.id, existing);
+            } else {
+              map.set(p.id, p);
             }
-            map.set(p.id, p);
+          });
+          pendingPaiementIds.forEach((id) => {
+            if (!map.has(id)) {
+              const localItem = localMap.get(id);
+              if (localItem) map.set(id, localItem);
+            }
           });
 
           const fusion = Array.from(map.values()).sort(
@@ -219,14 +271,8 @@ export class SyncService {
           currentState.nbPaiements = fusion.length;
         }
 
-        // 4. Tarifs
-        if (Array.isArray(cloud.tarifs) && cloud.tarifs.length > 0) {
-          const cloudTarifs: TuitionTariff[] = cloud.tarifs.map(Mappers.tarifFromSupabase);
-          SchoolStore.saveTarifs(cloudTarifs);
-        }
-
-        // 5. Journal d'audit
-        if (Array.isArray(cloud.auditLogs) && cloud.auditLogs.length > 0) {
+        // 4. Journal d'audit (réservé personnel)
+        if (cloud.scope === 'STAFF' && Array.isArray(cloud.auditLogs)) {
           const cloudLogs: AuditLog[] = cloud.auditLogs.map(Mappers.auditLogFromSupabase);
           const locales = SchoolStore.getAuditLogs();
           const map = new Map<string, AuditLog>();
@@ -236,6 +282,8 @@ export class SyncService {
             (a, b) => new Date(b.dateAction).getTime() - new Date(a.dateAction).getTime()
           );
           SchoolStore.saveAuditLogs(fusion);
+        } else if (cloud.scope !== 'STAFF') {
+          SchoolStore.saveAuditLogs([]);
         }
 
         currentState.estConnecte = true;
@@ -243,18 +291,15 @@ export class SyncService {
         currentState.statut = 'connecte';
         currentState.messageErreur = null;
         currentState.derniereSynchro = new Date().toLocaleTimeString('fr-FR');
-        currentState.message =
-          outboxResult.remaining > 0
-            ? `Connecté à Vercel PostgreSQL (${outboxResult.remaining} élément(s) en attente d'envoi)`
-            : 'Connecté à Vercel PostgreSQL · Synchronisation en direct active';
+        currentState.message = 'Synchronisé';
         notifierSync();
       } catch (err) {
         console.warn('[SyncService] Synchronisation partielle :', err);
         currentState.estConnecte = false;
         currentState.estEnCours = false;
         currentState.statut = 'erreur';
-        currentState.messageErreur = err instanceof Error ? err.message : 'Erreur de connexion Vercel PostgreSQL';
-        currentState.message = 'Synchronisation locale (Base Vercel temporairement inaccessible)';
+        currentState.messageErreur = err instanceof Error ? err.message : 'Erreur de connexion';
+        currentState.message = 'Synchronisation locale';
         notifierSync();
       } finally {
         syncInFlight = null;
