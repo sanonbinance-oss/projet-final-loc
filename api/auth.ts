@@ -940,6 +940,78 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     }
   }
 
+  if (action === 'reset_staff_pin') {
+    const staffAuth = verifySecretaryToken(req);
+    if (!staffAuth.valid || staffAuth.staffRole !== 'DIRECTEUR') {
+      sendJson(res, 403, { ok: false, error: 'Seule la Direction peut réinitialiser le code PIN d’un agent.' });
+      return;
+    }
+    if (!db) {
+      sendJson(res, 503, { ok: false, error: 'Base de données non disponible.' });
+      return;
+    }
+
+    const staffId = Number(body.staffId);
+    const newPin = typeof body.newPin === 'string' ? body.newPin.trim() : '';
+    if (!Number.isInteger(staffId) || staffId <= 0) {
+      sendJson(res, 400, { ok: false, error: 'Identifiant agent invalide.' });
+      return;
+    }
+    if (newPin.length < 4 || newPin.length > 32) {
+      sendJson(res, 400, { ok: false, error: 'Le nouveau code PIN doit contenir entre 4 et 32 caractères.' });
+      return;
+    }
+
+    try {
+      await ensureSchema(db.pool);
+      const targetRes = await db.pool.query<{ id: number; nom_complet: string; email: string }>(
+        'SELECT id, nom_complet, email FROM utilisateurs WHERE id = $1 LIMIT 1',
+        [staffId]
+      );
+      if (targetRes.rows.length === 0) {
+        sendJson(res, 404, { ok: false, error: 'Compte agent introuvable.' });
+        return;
+      }
+
+      const otherUsers = await db.pool.query<{ id: number; code_pin: string; pin_hash: string | null }>(
+        'SELECT id, code_pin, pin_hash FROM utilisateurs WHERE id <> $1',
+        [staffId]
+      );
+      const duplicatePin = otherUsers.rows.some((u) =>
+        u.pin_hash ? verifySecret(newPin, u.pin_hash) : Boolean(u.code_pin && verifySecret(newPin, u.code_pin))
+      );
+      if (duplicatePin) {
+        sendJson(res, 409, { ok: false, error: 'Ce code PIN est déjà attribué à un autre agent.' });
+        return;
+      }
+
+      const newHash = hashSecret(newPin);
+      await db.pool.query("UPDATE utilisateurs SET pin_hash = $1, code_pin = '' WHERE id = $2", [
+        newHash,
+        staffId,
+      ]);
+
+      const target = targetRes.rows[0];
+      await db.pool.query(
+        `INSERT INTO journal_activites (id, type_action, auteur, description, details, niveau_gravite)
+         VALUES ($1, 'CREATION_AGENT', $2, $3, $4, 'AVERTISSEMENT')`,
+        [
+          'LOG_' + Date.now() + '_' + crypto.randomBytes(2).toString('hex'),
+          staffAuth.author || 'Direction',
+          `Réinitialisation du code PIN de ${target.nom_complet} (${target.email})`,
+          JSON.stringify({ staffId: target.id }),
+        ]
+      );
+
+      sendJson(res, 200, { ok: true });
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erreur réinitialisation PIN agent';
+      sendJson(res, 500, { ok: false, error: msg });
+      return;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // 4. STAFF LOGIN (DEFAULT)
   // -------------------------------------------------------------------------
@@ -964,8 +1036,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
       });
       return;
     }
-    sendJson(res, 401, { ok: false, error: 'Code PIN secrétariat incorrect.' });
-    return;
+    if (!db) {
+      sendJson(res, 401, { ok: false, error: 'Code PIN secrétariat incorrect.' });
+      return;
+    }
   }
 
   if (db) {

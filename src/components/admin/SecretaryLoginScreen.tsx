@@ -79,6 +79,9 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
               placeholder="agent@excellence-avenir.bf"
               className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-slate-900 bg-white"
             />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Laissez vide pour le code PIN Direction principal, ou saisissez l&apos;email d&apos;un agent.
+            </p>
           </div>
 
           <div>
@@ -120,6 +123,10 @@ export const SecretaryLoginScreen: React.FC<SecretaryLoginScreenProps> = ({
               <span>{isVerifying ? 'Vérification...' : 'Se connecter'}</span>
             </button>
           </div>
+
+          <p className="text-[11px] text-slate-500 text-center leading-relaxed pt-1">
+            PIN oublié ? Demandez au Directeur de le réinitialiser dans <strong>Équipe &amp; Accès</strong> ou mettez à jour la variable serveur <strong>ADMIN_PIN</strong> dans les paramètres.
+          </p>
         </form>
       </div>
 

@@ -388,6 +388,17 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
       [defaultAdminHash]
     );
 
+    const directorCount = await client.query<{ cnt: string }>(
+      `SELECT COUNT(*)::text AS cnt FROM utilisateurs WHERE role_utilisateur = 'DIRECTEUR' AND est_actif = TRUE`
+    );
+    if (Number(directorCount.rows[0]?.cnt || 0) === 0) {
+      await client.query(
+        `UPDATE utilisateurs
+         SET role_utilisateur = 'DIRECTEUR', est_actif = TRUE
+         WHERE email = 'secretaire@excellence-avenir.bf'`
+      );
+    }
+
     // Upgrade legacy plaintext default '1234' rows transparently to scrypt hash if pin_hash is empty
     const legacyUsers = await client.query<{ id: number; code_pin: string; pin_hash: string | null }>(
       `SELECT id, code_pin, pin_hash FROM utilisateurs WHERE pin_hash IS NULL AND code_pin IS NOT NULL AND code_pin <> ''`

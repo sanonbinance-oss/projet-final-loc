@@ -50,6 +50,11 @@ export const StaffManagementTab: React.FC<StaffManagementTabProps> = ({ staffSes
   const [newPin, setNewPin] = useState('');
   const [pinLoading, setPinLoading] = useState(false);
 
+  // Director reset of another staff member's PIN
+  const [resettingStaffId, setResettingStaffId] = useState<number | null>(null);
+  const [resetStaffPinValue, setResetStaffPinValue] = useState('');
+  const [resetStaffLoading, setResetStaffLoading] = useState(false);
+
   // Parent temporary password recovery code
   const [selectedParentId, setSelectedParentId] = useState('');
   const [resetPhoneInput, setResetPhoneInput] = useState('');
@@ -144,6 +149,26 @@ export const StaffManagementTab: React.FC<StaffManagementTabProps> = ({ staffSes
       setNewPin('');
     } else {
       setError(res.error || 'Modification impossible.');
+    }
+  };
+
+  const handleResetOtherStaffPin = async (user: StaffUser) => {
+    if (!isDirector || resetStaffLoading) return;
+    if (resetStaffPinValue.trim().length < 4) {
+      setError('Le nouveau code PIN doit contenir au moins 4 caractères.');
+      return;
+    }
+    setError('');
+    setFeedback('');
+    setResetStaffLoading(true);
+    const res = await SupabaseSyncService.resetStaffPin(user.id, resetStaffPinValue.trim());
+    setResetStaffLoading(false);
+    if (res.ok) {
+      setFeedback(`Code PIN réinitialisé pour ${user.nomComplet} (${user.email}).`);
+      setResettingStaffId(null);
+      setResetStaffPinValue('');
+    } else {
+      setError(res.error || 'Impossible de réinitialiser ce code PIN.');
     }
   };
 
@@ -303,18 +328,58 @@ export const StaffManagementTab: React.FC<StaffManagementTabProps> = ({ staffSes
                     </div>
 
                     {isDirector && (
-                      <button
-                        type="button"
-                        onClick={() => void handleToggleStatus(u)}
-                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer inline-flex items-center gap-1.5 shrink-0 ${
-                          u.estActif
-                            ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
-                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                        }`}
-                      >
-                        <Power className="w-3.5 h-3.5" />
-                        <span>{u.estActif ? 'Désactiver' : 'Réactiver'}</span>
-                      </button>
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (resettingStaffId === u.id) {
+                                setResettingStaffId(null);
+                                setResetStaffPinValue('');
+                              } else {
+                                setResettingStaffId(u.id);
+                                setResetStaffPinValue('');
+                              }
+                            }}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg border bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" />
+                            <span>Changer PIN</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleStatus(u)}
+                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer inline-flex items-center gap-1.5 ${
+                              u.estActif
+                                ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                            }`}
+                          >
+                            <Power className="w-3.5 h-3.5" />
+                            <span>{u.estActif ? 'Désactiver' : 'Réactiver'}</span>
+                          </button>
+                        </div>
+
+                        {resettingStaffId === u.id && (
+                          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg p-1.5">
+                            <input
+                              type="password"
+                              value={resetStaffPinValue}
+                              onChange={(e) => setResetStaffPinValue(e.target.value)}
+                              placeholder="Nouveau PIN (4+)"
+                              className="w-32 px-2 py-1 text-xs font-mono rounded border border-slate-300 bg-white"
+                            />
+                            <button
+                              type="button"
+                              disabled={resetStaffLoading}
+                              onClick={() => void handleResetOtherStaffPin(u)}
+                              className="px-2.5 py-1 text-[11px] font-bold rounded bg-emerald-700 hover:bg-emerald-600 text-white cursor-pointer disabled:opacity-60"
+                            >
+                              {resetStaffLoading ? '...' : 'Valider'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}

@@ -370,6 +370,22 @@ export class SupabaseSyncService {
     }
   }
 
+  static async resetStaffPin(staffId: number, newPin: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const { status, data } = await apiFetchJson<{ ok?: boolean; error?: string }>('/api/auth', {
+        method: 'POST',
+        tokenOverride: adminBearerToken,
+        body: JSON.stringify({ action: 'reset_staff_pin', staffId, newPin }),
+      });
+      if (status >= 200 && status < 300 && data?.ok) {
+        return { ok: true };
+      }
+      return { ok: false, error: data?.error || 'Réinitialisation impossible.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // AUTHENTIFICATION & ESPACE PRIVÉ PARENT
   // ---------------------------------------------------------------------------

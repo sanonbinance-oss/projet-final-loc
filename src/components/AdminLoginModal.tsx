@@ -76,6 +76,9 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               placeholder="agent@excellence-avenir.bf"
               className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
             />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Laissez vide pour le code PIN Direction principal, ou saisissez l&apos;email d&apos;un agent.
+            </p>
           </div>
 
           <div>
@@ -116,6 +119,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               {isVerifying ? 'Vérification...' : 'Se connecter'}
             </button>
           </div>
+
+          <p className="text-[11px] text-slate-500 text-center leading-relaxed">
+            PIN oublié ? Demandez au Directeur de le réinitialiser dans <strong>Équipe &amp; Accès</strong> ou mettez à jour la variable serveur <strong>ADMIN_PIN</strong> dans les paramètres.
+          </p>
         </form>
       </div>
     </div>
