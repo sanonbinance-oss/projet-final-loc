@@ -4,6 +4,7 @@ export type ParentTab = 'paiement' | 'inscription' | 'messages' | 'historique' |
 
 export type AdminTab =
   | 'dashboard'
+  | 'statistiques'
   | 'guichet'
   | 'eleves'
   | 'demandes'

@@ -12,12 +12,14 @@ import {
   ShieldCheck,
   Users,
   Bot,
-  FileDown
+  FileDown,
+  BarChart3
 } from 'lucide-react';
 import { AdminTab, AdmissionRequest, Payment, StaffSession, Student } from '../../types';
 import { DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { getStaffSession } from '../../services/supabaseClient';
 import { DashboardTab } from './DashboardTab';
+import { StatisticsTab } from './StatisticsTab';
 import { CashDeskTab } from './CashDeskTab';
 import { StudentsTab } from './StudentsTab';
 import { AdmissionsTab } from './AdmissionsTab';
@@ -125,6 +127,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           >
             <LayoutDashboard className="w-3.5 h-3.5" />
             <span>Tableau de Bord</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('statistiques')}
+            className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+              activeTab === 'statistiques'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>Statistiques</span>
           </button>
 
           <button
@@ -261,6 +275,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             payments={payments}
             admissions={admissions}
             onOpenReceipt={onOpenReceipt}
+            onNavigateToTab={setActiveTab}
+          />
+        )}
+
+        {activeTab === 'statistiques' && (
+          <StatisticsTab
+            students={students}
+            payments={payments}
+            onRefreshData={onRefreshData}
             onNavigateToTab={setActiveTab}
           />
         )}
