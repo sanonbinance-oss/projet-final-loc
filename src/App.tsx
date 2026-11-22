@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
+  AdminTab,
   UserRole,
   Student,
   Payment,
@@ -77,9 +78,7 @@ export default function App() {
 
   // Tab navigation states
   const [activeParentTab, setActiveParentTab] = useState<ParentTab>('paiement');
-  const [activeAdminTab, setActiveAdminTab] = useState<
-    'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'equipe' | 'api'
-  >('dashboard');
+  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>('dashboard');
 
   // Store data state
   const [students, setStudents] = useState<Student[]>(() => SchoolStore.getStudents());
@@ -180,14 +179,14 @@ export default function App() {
     void SyncService.synchroniserMaintenant();
   };
 
-  const handleParentLogout = () => {
+  const handleParentLogout = useCallback(() => {
     clearParentToken();
     setParentAccount(null);
     setActiveAuthScope('parent');
     SchoolStore.setScope('public');
     refreshAllData();
     void SyncService.synchroniserMaintenant();
-  };
+  }, [refreshAllData]);
 
   const handleAdminLoginSuccess = () => {
     const session = getStaffSession();
@@ -265,8 +264,14 @@ export default function App() {
 
   const currentRole: UserRole = isAdminRoute && adminAuthenticated ? 'admin' : 'parent';
   const readMessageSet = new Set(readMessageIds);
+  const ownedStudentIds = new Set(
+    parentAccount ? students.filter((s) => s.parentCompteId === parentAccount.id).map((s) => s.id) : []
+  );
   const unreadMessagesCount = parentAccount
-    ? buildParentMessages(admissions, payments).filter((m) => !readMessageSet.has(m.id)).length
+    ? buildParentMessages(
+        admissions.filter((a) => a.parentCompteId === parentAccount.id),
+        payments.filter((p) => p.parentCompteId === parentAccount.id || ownedStudentIds.has(p.studentId))
+      ).filter((m) => !readMessageSet.has(m.id)).length
     : 0;
 
   return (

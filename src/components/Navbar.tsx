@@ -1,8 +1,6 @@
 import React from 'react';
 import { GraduationCap, LogOut, Mail, QrCode, Receipt } from 'lucide-react';
-import { UserRole, ParentTab, ParentAccount } from '../types';
-
-type AdminNavTab = 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'equipe' | 'api';
+import { AdminTab, UserRole, ParentTab, ParentAccount } from '../types';
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -15,8 +13,8 @@ interface NavbarProps {
   onOpenVerifyReceipt?: () => void;
   activeParentTab: ParentTab;
   setActiveParentTab: (tab: ParentTab) => void;
-  activeAdminTab: AdminNavTab;
-  setActiveAdminTab: (tab: AdminNavTab) => void;
+  activeAdminTab: AdminTab;
+  setActiveAdminTab: (tab: AdminTab) => void;
   pendingAdmissionsCount: number;
   unreadMessagesCount?: number;
 }

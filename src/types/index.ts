@@ -2,6 +2,18 @@ export type UserRole = 'parent' | 'admin';
 
 export type ParentTab = 'paiement' | 'inscription' | 'messages' | 'historique' | 'tarifs' | 'contact';
 
+export type AdminTab =
+  | 'dashboard'
+  | 'guichet'
+  | 'eleves'
+  | 'demandes'
+  | 'transactions'
+  | 'tarifs'
+  | 'journal'
+  | 'equipe'
+  | 'ia'
+  | 'api';
+
 export type StaffRole = 'DIRECTEUR' | 'SECRETAIRE' | 'CAISSIER';
 
 export interface ParentAccount {
@@ -10,6 +22,28 @@ export interface ParentAccount {
   telephone: string;
   telephoneNormalise?: string;
   email?: string;
+}
+
+export interface ParentAccountSummary {
+  id: string;
+  nomComplet: string;
+  telephone: string;
+  email?: string;
+  estActif: boolean;
+  dateCreation: string;
+}
+
+export type AiInstructionCategory = 'TARIF' | 'PROGRAMME' | 'PROCEDURE' | 'URGENT' | 'INFO';
+
+export interface AiInstruction {
+  id: string;
+  categorie: AiInstructionCategory;
+  titre: string;
+  contenu: string;
+  auteur: string;
+  estActif: boolean;
+  dateCreation: string;
+  dateModification: string;
 }
 
 export interface StaffSession {
@@ -205,6 +239,9 @@ export type AuditActionType =
   | 'PAIEMENT_MOBILE_MONEY'
   | 'VALIDATION_PAIEMENT_MOBILE_MONEY'
   | 'REJET_PAIEMENT_MOBILE_MONEY'
+  | 'INIT_BASE'
+  | 'RESET_MDP_PARENT'
+  | 'INSTRUCTION_IA'
   | 'AUTRE';
 
 export interface AuditLog {

@@ -16,9 +16,10 @@ import {
 } from 'lucide-react';
 import { SchoolStore, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { SyncService } from '../../services/sync';
+import { SupabaseSyncService } from '../../services/supabaseClient';
 import { AdmissionRequest, AcademicDecision, TransferReason, ParentAccount } from '../../types';
 
-async function compressImageToDataUrl(file: File): Promise<string> {
+async function optimizeImageToHdDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Lecture impossible'));
@@ -26,7 +27,7 @@ async function compressImageToDataUrl(file: File): Promise<string> {
       const img = new Image();
       img.onerror = () => reject(new Error('Image invalide'));
       img.onload = () => {
-        const maxDim = 700;
+        const maxDim = 1400;
         let width = img.width;
         let height = img.height;
         if (width > maxDim || height > maxDim) {
@@ -43,22 +44,21 @@ async function compressImageToDataUrl(file: File): Promise<string> {
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        let output = canvas.toDataURL('image/jpeg', 0.55);
-        if (output.length > 65000) {
-          const smallCanvas = document.createElement('canvas');
-          const smallRatio = Math.min(480 / img.width, 480 / img.height, 1);
-          smallCanvas.width = Math.round(img.width * smallRatio);
-          smallCanvas.height = Math.round(img.height * smallRatio);
-          const smallCtx = smallCanvas.getContext('2d');
-          if (smallCtx) {
-            smallCtx.drawImage(img, 0, 0, smallCanvas.width, smallCanvas.height);
-            output = smallCanvas.toDataURL('image/jpeg', 0.45);
-          }
-        }
-        resolve(output);
+        resolve(canvas.toDataURL('image/jpeg', 0.78));
       };
       img.src = reader.result as string;
     };
+    reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      resolve(typeof e.target?.result === 'string' ? e.target.result : '');
+    };
+    reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
     reader.readAsDataURL(file);
   });
 }
@@ -151,34 +151,55 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({
 
   const processAttachment = async (
     file: File,
+    docType: 'bulletin' | 'extrait',
     onName: (name: string) => void,
     onUrl: (url: string) => void,
     onFlag: (flag: boolean) => void
   ) => {
+    setError('');
+    const maxBytes = 3.5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setError(`Le fichier « ${file.name} » dépasse 3,5 Mo. Veuillez le compresser légèrement.`);
+      return;
+    }
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isImage = file.type.startsWith('image/');
+    if (!isPdf && !isImage) {
+      setError('Format non pris en charge. Utilisez un fichier PDF ou une photo (JPEG, PNG, WEBP).');
+      return;
+    }
+
     onName(file.name);
     onFlag(true);
-    setError('');
     setIsProcessingFile(true);
 
     try {
-      if (file.type.startsWith('image/')) {
-        const compressed = await compressImageToDataUrl(file);
-        onUrl(compressed);
-      } else if (file.size <= 220 * 1024) {
-        const dataUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (uploadEvent) => {
-            resolve(typeof uploadEvent.target?.result === 'string' ? uploadEvent.target.result : '');
-          };
-          reader.onerror = () => resolve('');
-          reader.readAsDataURL(file);
-        });
-        onUrl(dataUrl);
+      const preparedDataUrl = isImage
+        ? await optimizeImageToHdDataUrl(file)
+        : await readFileAsDataUrl(file);
+      const mimeType = isImage ? 'image/jpeg' : 'application/pdf';
+
+      const uploadRes = await SupabaseSyncService.uploadDocument({
+        fileName: file.name,
+        mimeType,
+        base64Data: preparedDataUrl,
+        docType,
+      });
+
+      if (uploadRes.ok && uploadRes.url) {
+        onUrl(uploadRes.url);
+      } else if (preparedDataUrl.length <= 280000) {
+        onUrl(preparedDataUrl);
       } else {
         onUrl('');
+        setError(uploadRes.error || 'Téléversement serveur impossible pour ce fichier.');
+        onFlag(false);
       }
     } catch {
       onUrl('');
+      onFlag(false);
+      setError('Impossible de préparer ce fichier. Veuillez réessayer.');
     } finally {
       setIsProcessingFile(false);
     }
@@ -188,6 +209,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({
     if (!e.target.files || !e.target.files[0]) return;
     await processAttachment(
       e.target.files[0],
+      'bulletin',
       setBulletinFichier,
       setBulletinUrl,
       setHasUploadedFile
@@ -198,6 +220,7 @@ export const AdmissionForm: React.FC<AdmissionFormProps> = ({
     if (!e.target.files || !e.target.files[0]) return;
     await processAttachment(
       e.target.files[0],
+      'extrait',
       setExtraitFichier,
       setExtraitUrl,
       setHasUploadedExtrait

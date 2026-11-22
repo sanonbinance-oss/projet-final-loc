@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Receipt,
   Printer,
@@ -10,11 +10,15 @@ import {
   ArrowRight,
   FileCheck,
   ShieldCheck,
+  ShieldAlert,
+  RotateCw,
 } from 'lucide-react';
-import { AdmissionRequest, Payment, Student } from '../../types';
+import { AdmissionRequest, ParentAccount, Payment, Student } from '../../types';
 import { PaymentService } from '../../services/paymentService';
+import { SupabaseSyncService } from '../../services/supabaseClient';
 
 interface ParentHistoryTabProps {
+  parentAccount: ParentAccount | null;
   students: Student[];
   admissions: AdmissionRequest[];
   payments: Payment[];
@@ -23,9 +27,11 @@ interface ParentHistoryTabProps {
   onSelectStudentToPay: (student: Student) => void;
   onGoToAdmission: () => void;
   onOpenVerifyReceipt: () => void;
+  onSessionInvalid?: () => void;
 }
 
 export const ParentHistoryTab: React.FC<ParentHistoryTabProps> = ({
+  parentAccount,
   students,
   admissions,
   payments,
@@ -34,10 +40,121 @@ export const ParentHistoryTab: React.FC<ParentHistoryTabProps> = ({
   onSelectStudentToPay,
   onGoToAdmission,
   onOpenVerifyReceipt,
+  onSessionInvalid,
 }) => {
-  const sortedPayments = [...payments].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
+  const [validationState, setValidationState] = useState<'checking' | 'authorized' | 'denied'>('checking');
+  const [verifiedOwnerId, setVerifiedOwnerId] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [validationRetryKey, setValidationRetryKey] = useState(0);
+  const onSessionInvalidRef = useRef(onSessionInvalid);
+  onSessionInvalidRef.current = onSessionInvalid;
+
+  useEffect(() => {
+    let cancelled = false;
+    setValidationState('checking');
+    setVerifiedOwnerId(null);
+    setValidationError(null);
+
+    const verifyOwnerToken = async () => {
+      const res = await SupabaseSyncService.validateParentToken(parentAccount?.id);
+      if (cancelled) return;
+
+      if (res.valid && res.parent?.id) {
+        setVerifiedOwnerId(res.parent.id);
+        setValidationState('authorized');
+        setValidationError(null);
+        return;
+      }
+
+      setVerifiedOwnerId(null);
+      setValidationState('denied');
+      setValidationError(res.error || 'Accès refusé : jeton de session non valide.');
+      if (res.unauthorized && onSessionInvalidRef.current) {
+        onSessionInvalidRef.current();
+      }
+    };
+
+    void verifyOwnerToken();
+    return () => {
+      cancelled = true;
+    };
+  }, [parentAccount?.id, validationRetryKey]);
+
+  const owned = useMemo(() => {
+    if (validationState !== 'authorized' || !verifiedOwnerId) {
+      return { students: [] as Student[], admissions: [] as AdmissionRequest[], payments: [] as Payment[] };
+    }
+    const ownedStudents = students.filter((s) => s.parentCompteId === verifiedOwnerId);
+    const ownedStudentIds = new Set(ownedStudents.map((s) => s.id));
+    const ownedAdmissions = admissions.filter((a) => a.parentCompteId === verifiedOwnerId);
+    const ownedPayments = payments
+      .filter((p) => p.parentCompteId === verifiedOwnerId || ownedStudentIds.has(p.studentId))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return {
+      students: ownedStudents,
+      admissions: ownedAdmissions,
+      payments: ownedPayments,
+    };
+  }, [validationState, verifiedOwnerId, students, admissions, payments]);
+
+  if (validationState === 'checking') {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-sm space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto">
+            <ShieldCheck className="w-6 h-6 animate-pulse" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-900">
+            Vérification de votre accès sécurisé...
+          </h3>
+          <p className="text-xs text-slate-500">
+            Contrôle de session en cours avant l'affichage de vos reçus et dossiers.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (validationState === 'denied') {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-2xl border border-rose-200 p-8 sm:p-10 text-center shadow-sm space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-900">
+              Accès aux reçus non autorisé
+            </h3>
+            <p className="text-xs text-rose-700 max-w-md mx-auto">
+              {validationError || 'Votre jeton de session est invalide ou expiré.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setValidationRetryKey((k) => k + 1)}
+              className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Revérifier</span>
+            </button>
+            {onSessionInvalid && (
+              <button
+                type="button"
+                onClick={onSessionInvalid}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
+              >
+                Se reconnecter à mon espace
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const sortedPayments = owned.payments;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -50,7 +167,7 @@ export const ParentHistoryTab: React.FC<ParentHistoryTabProps> = ({
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-slate-900">
-                Mes Enfants & Situation de Scolarité ({students.length})
+                Mes Enfants & Situation de Scolarité ({owned.students.length})
               </h2>
             </div>
           </div>
@@ -75,7 +192,7 @@ export const ParentHistoryTab: React.FC<ParentHistoryTabProps> = ({
           </div>
         </div>
 
-        {students.length === 0 ? (
+        {owned.students.length === 0 ? (
           <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 text-center space-y-3">
             <p className="text-xs text-slate-600">
               Aucun élève rattaché à votre compte pour le moment.
@@ -99,7 +216,7 @@ export const ParentHistoryTab: React.FC<ParentHistoryTabProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {students.map((s) => {
+            {owned.students.map((s) => {
               const reste = Math.max(0, s.scolariteTotale - s.montantPaye);
               const pct =
                 s.scolariteTotale > 0
@@ -161,18 +278,18 @@ export const ParentHistoryTab: React.FC<ParentHistoryTabProps> = ({
       </div>
 
       {/* Suivi des demandes d'admission */}
-      {admissions.length > 0 && (
+      {owned.admissions.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
           <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
             <FileCheck className="w-5 h-5 text-emerald-700" />
             <h3 className="text-base font-bold text-slate-900">
-              Suivi de mes Demandes d'Admission ({admissions.length})
+              Suivi de mes Demandes d'Admission ({owned.admissions.length})
             </h3>
           </div>
 
           <div className="space-y-3">
-            {admissions.map((adm) => {
-              const matchedStudent = students.find(
+            {owned.admissions.map((adm) => {
+              const matchedStudent = owned.students.find(
                 (s) =>
                   (adm.matriculeAttribue && s.matricule === adm.matriculeAttribue) ||
                   `${s.prenom} ${s.nom}`.toLowerCase() ===

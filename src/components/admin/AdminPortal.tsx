@@ -10,9 +10,11 @@ import {
   Building,
   Coins,
   ShieldCheck,
-  Users
+  Users,
+  Bot,
+  FileDown
 } from 'lucide-react';
-import { AdmissionRequest, Payment, StaffSession, Student } from '../../types';
+import { AdminTab, AdmissionRequest, Payment, StaffSession, Student } from '../../types';
 import { DEFAULT_SCHOOL_INFO, CURRENT_SCHOOL_YEAR } from '../../services/store';
 import { getStaffSession } from '../../services/supabaseClient';
 import { DashboardTab } from './DashboardTab';
@@ -24,16 +26,15 @@ import { ApiConfigTab } from './ApiConfigTab';
 import { TarifsTab } from './TarifsTab';
 import { AuditTab } from './AuditTab';
 import { StaffManagementTab } from './StaffManagementTab';
-
-type AdminTabId = 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'equipe' | 'api';
+import { AiInstructionsTab } from './AiInstructionsTab';
 
 interface AdminPortalProps {
   students: Student[];
   payments: Payment[];
   admissions: AdmissionRequest[];
   staffSession?: StaffSession | null;
-  activeTab: AdminTabId;
-  setActiveTab: (tab: AdminTabId) => void;
+  activeTab: AdminTab;
+  setActiveTab: (tab: AdminTab) => void;
   onOpenReceipt: (payment: Payment, scolariteTotale?: number, montantPaye?: number) => void;
   onRefreshData: () => void;
   onSwitchToParent: () => void;
@@ -92,13 +93,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onSwitchToParent}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-200 whitespace-nowrap"
-          >
-            <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-            <span>Portail Parents</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <a
+              href="/edupay-scolarite-fiche-complete.pdf"
+              download="EduPay-Scolarite-Fiche-Complete.pdf"
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition-colors flex items-center gap-1.5 border border-emerald-200 whitespace-nowrap"
+            >
+              <FileDown className="w-3.5 h-3.5 shrink-0" />
+              <span>Fiche Projet (PDF)</span>
+            </a>
+
+            <button
+              onClick={onSwitchToParent}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-200 whitespace-nowrap"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+              <span>Portail Parents</span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation Navigation Bar */}
@@ -213,6 +225,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
           {!isCashierOnly && (
             <button
+              onClick={() => setActiveTab('ia')}
+              className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'ia'
+                  ? 'bg-emerald-700 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>Assistant IA</span>
+            </button>
+          )}
+
+          {!isCashierOnly && (
+            <button
               onClick={() => setActiveTab('api')}
               className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 activeTab === 'api'
@@ -281,7 +307,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         )}
 
         {activeTab === 'equipe' && (
-          <StaffManagementTab staffSession={resolvedStaffSession} />
+          <StaffManagementTab staffSession={resolvedStaffSession} onDataReset={onRefreshData} />
+        )}
+
+        {activeTab === 'ia' && !isCashierOnly && (
+          <AiInstructionsTab staffSession={resolvedStaffSession} />
         )}
 
         {activeTab === 'api' && !isCashierOnly && <ApiConfigTab />}

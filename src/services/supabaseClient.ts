@@ -1,4 +1,13 @@
-import { ParentAccount, ReceiptVerificationResult, StaffRole, StaffSession, StaffUser } from '../types';
+import {
+  AiInstruction,
+  AiInstructionCategory,
+  ParentAccount,
+  ParentAccountSummary,
+  ReceiptVerificationResult,
+  StaffRole,
+  StaffSession,
+  StaffUser,
+} from '../types';
 
 const API_REQUEST_TIMEOUT_MS = 8000;
 
@@ -418,6 +427,87 @@ export class SupabaseSyncService {
     }
   }
 
+  static async validateParentToken(expectedParentId?: string): Promise<{
+    valid: boolean;
+    parent?: ParentAccount;
+    unauthorized?: boolean;
+    networkError?: boolean;
+    error?: string;
+  }> {
+    if (!parentBearerToken) {
+      clearParentToken();
+      return {
+        valid: false,
+        unauthorized: true,
+        error: 'Aucun jeton de session actif. Veuillez vous connecter à votre espace parent.',
+      };
+    }
+
+    if (expectedParentId && currentParentAccount && currentParentAccount.id !== expectedParentId) {
+      clearParentToken();
+      return {
+        valid: false,
+        unauthorized: true,
+        error: 'Session non concordante détectée. Reconnexion requise.',
+      };
+    }
+
+    try {
+      const qs = new URLSearchParams({
+        action: 'validate_token',
+        expectedType: 'PARENT',
+      });
+      if (expectedParentId) {
+        qs.set('expectedParentId', expectedParentId);
+      }
+
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        valid?: boolean;
+        type?: string;
+        parent?: ParentAccount;
+        error?: string;
+      }>(`/api/auth?${qs.toString()}`, {
+        method: 'GET',
+        tokenOverride: parentBearerToken,
+      });
+
+      if (status >= 200 && status < 300 && data?.ok && data?.valid && data?.type === 'PARENT' && data?.parent) {
+        if (expectedParentId && data.parent.id !== expectedParentId) {
+          clearParentToken();
+          return {
+            valid: false,
+            unauthorized: true,
+            error: 'Accès inter-utilisateurs refusé : identité parent différente.',
+          };
+        }
+        setParentToken(parentBearerToken, data.parent);
+        return { valid: true, parent: data.parent };
+      }
+
+      if (status === 401 || status === 403) {
+        clearParentToken();
+        return {
+          valid: false,
+          unauthorized: true,
+          error: data?.error || 'Session invalide ou expirée. Veuillez vous reconnecter.',
+        };
+      }
+
+      return {
+        valid: false,
+        networkError: true,
+        error: data?.error || 'Impossible de vérifier votre jeton pour le moment.',
+      };
+    } catch (err) {
+      return {
+        valid: false,
+        networkError: true,
+        error: err instanceof Error ? err.message : 'Erreur réseau lors de la vérification du jeton.',
+      };
+    }
+  }
+
   static async linkChildToParentAccount(
     matricule: string,
     telephoneParent: string
@@ -724,6 +814,357 @@ export class SupabaseSyncService {
     } catch (err) {
       console.warn('[Delete Eleve] Erreur réseau:', err);
       return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // STOCKAGE CLOUD / POSTGRESQL DES DOCUMENTS (PDF & IMAGES HD)
+  // ---------------------------------------------------------------------------
+  static async uploadDocument(payload: {
+    fileName: string;
+    mimeType: string;
+    base64Data: string;
+    docType: 'bulletin' | 'extrait';
+    demandeId?: string;
+  }): Promise<{
+    ok: boolean;
+    id?: string;
+    url?: string;
+    fileName?: string;
+    mimeType?: string;
+    error?: string;
+  }> {
+    try {
+      const token = activeAuthScope === 'staff' ? adminBearerToken : parentBearerToken;
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        id?: string;
+        url?: string;
+        fileName?: string;
+        mimeType?: string;
+        error?: string;
+      }>(
+        '/api/documents',
+        {
+          method: 'POST',
+          tokenOverride: token,
+          body: JSON.stringify({ action: 'upload', ...payload }),
+        },
+        20000
+      );
+      if (status >= 200 && status < 300 && data?.ok && data.url) {
+        return {
+          ok: true,
+          id: data.id,
+          url: data.url,
+          fileName: data.fileName,
+          mimeType: data.mimeType,
+        };
+      }
+      return { ok: false, error: data?.error || 'Téléversement impossible.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur téléversement' };
+    }
+  }
+
+  static async fetchAuthenticatedDocumentBlob(url: string): Promise<{
+    ok: boolean;
+    blobUrl?: string;
+    mimeType?: string;
+    error?: string;
+  }> {
+    if (!url.startsWith('/api/documents?')) {
+      return { ok: false, error: 'URL de document invalide.' };
+    }
+    const token = activeAuthScope === 'staff' ? adminBearerToken : parentBearerToken || adminBearerToken;
+    if (!token) {
+      return { ok: false, error: 'Session requise pour consulter le document.' };
+    }
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) {
+        return { ok: false, error: `Impossible de charger le document (HTTP ${response.status}).` };
+      }
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      return {
+        ok: true,
+        blobUrl,
+        mimeType: response.headers.get('Content-Type') || blob.type,
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur chargement document' };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // RÉCUPÉRATION MOT DE PASSE PARENT & GESTION PARENTS SECRÉTARIAT
+  // ---------------------------------------------------------------------------
+  static async listParentAccountsForStaff(): Promise<{
+    ok: boolean;
+    parents?: ParentAccountSummary[];
+    error?: string;
+  }> {
+    try {
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        parents?: ParentAccountSummary[];
+        error?: string;
+      }>('/api/auth?action=list_parents', { tokenOverride: adminBearerToken });
+      if (status >= 200 && status < 300 && data?.ok) {
+        return { ok: true, parents: data.parents || [] };
+      }
+      return { ok: false, error: data?.error || 'Impossible de charger les comptes parents.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
+  static async generateParentResetCodeForStaff(payload: {
+    telephone?: string;
+    parentId?: string;
+  }): Promise<{
+    ok: boolean;
+    code?: string;
+    parentName?: string;
+    telephone?: string;
+    expiresInMinutes?: number;
+    error?: string;
+  }> {
+    try {
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        code?: string;
+        parentName?: string;
+        telephone?: string;
+        expiresInMinutes?: number;
+        error?: string;
+      }>('/api/auth', {
+        method: 'POST',
+        tokenOverride: adminBearerToken,
+        body: JSON.stringify({ action: 'staff_generate_parent_reset', ...payload }),
+      });
+      if (status >= 200 && status < 300 && data?.ok && data.code) {
+        return {
+          ok: true,
+          code: data.code,
+          parentName: data.parentName,
+          telephone: data.telephone,
+          expiresInMinutes: data.expiresInMinutes,
+        };
+      }
+      return { ok: false, error: data?.error || 'Génération du code impossible.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
+  static async requestParentPasswordReset(telephone: string): Promise<{
+    ok: boolean;
+    deliveryMethod?: string;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        deliveryMethod?: string;
+        message?: string;
+        error?: string;
+      }>('/api/auth', {
+        method: 'POST',
+        tokenOverride: null,
+        body: JSON.stringify({ action: 'parent_request_reset', telephone }),
+      });
+      if (status >= 200 && status < 300 && data?.ok) {
+        return { ok: true, deliveryMethod: data.deliveryMethod, message: data.message };
+      }
+      return { ok: false, error: data?.error || 'Demande impossible.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
+  static async confirmParentPasswordReset(payload: {
+    telephone: string;
+    code: string;
+    newPassword: string;
+  }): Promise<{ ok: boolean; parent?: ParentAccount; error?: string }> {
+    try {
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        token?: string;
+        parent?: ParentAccount;
+        error?: string;
+      }>('/api/auth', {
+        method: 'POST',
+        tokenOverride: null,
+        body: JSON.stringify({ action: 'parent_confirm_reset', ...payload }),
+      });
+      if (status >= 200 && status < 300 && data?.ok && data.token && data.parent) {
+        setParentToken(data.token, data.parent);
+        return { ok: true, parent: data.parent };
+      }
+      return { ok: false, error: data?.error || 'Réinitialisation impossible.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // RÉINITIALISATION DONNÉES DÉMO -> DONNÉES RÉELLES (DIRECTEUR)
+  // ---------------------------------------------------------------------------
+  static async resetDemoData(includeParents: boolean): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const { status, data } = await apiFetchJson<{ ok?: boolean; error?: string }>('/api/db', {
+        method: 'POST',
+        tokenOverride: adminBearerToken,
+        body: JSON.stringify({ action: 'reset_demo_data', includeParents }),
+      });
+      if (status >= 200 && status < 300 && data?.ok) {
+        return { ok: true };
+      }
+      return { ok: false, error: data?.error || 'Réinitialisation impossible.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // ASSISTANT IA PARENTS & PRÉ-INSTRUCTIONS SECRÉTARIAT
+  // ---------------------------------------------------------------------------
+  static async askAiAssistant(
+    question: string,
+    history: Array<{ role: 'user' | 'model'; text: string }>
+  ): Promise<{ ok: boolean; answer?: string; activeInstructionsCount?: number; error?: string }> {
+    try {
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        answer?: string;
+        activeInstructionsCount?: number;
+        error?: string;
+      }>(
+        '/api/ai-assistant',
+        {
+          method: 'POST',
+          tokenOverride: null,
+          body: JSON.stringify({ action: 'ask', question, history }),
+        },
+        25000
+      );
+      if (status >= 200 && status < 300 && data?.ok && data.answer) {
+        return {
+          ok: true,
+          answer: data.answer,
+          activeInstructionsCount: data.activeInstructionsCount,
+        };
+      }
+      return { ok: false, error: data?.error || "L'assistant n'a pas pu répondre." };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur assistant IA' };
+    }
+  }
+
+  static async listActiveAiAnnouncements(): Promise<{
+    ok: boolean;
+    instructions?: AiInstruction[];
+    error?: string;
+  }> {
+    try {
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        instructions?: AiInstruction[];
+        error?: string;
+      }>('/api/ai-assistant?action=announcements', { tokenOverride: null });
+      if (status >= 200 && status < 300 && data?.ok) {
+        return { ok: true, instructions: data.instructions || [] };
+      }
+      return { ok: false, error: data?.error || 'Impossible de charger les annonces.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
+  static async listAiInstructionsForStaff(): Promise<{
+    ok: boolean;
+    instructions?: AiInstruction[];
+    error?: string;
+  }> {
+    try {
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        instructions?: AiInstruction[];
+        error?: string;
+      }>('/api/ai-assistant?action=instructions', { tokenOverride: adminBearerToken });
+      if (status >= 200 && status < 300 && data?.ok) {
+        return { ok: true, instructions: data.instructions || [] };
+      }
+      return { ok: false, error: data?.error || 'Impossible de charger les instructions.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
+  static async saveAiInstruction(payload: {
+    id?: string;
+    categorie: AiInstructionCategory;
+    titre: string;
+    contenu: string;
+    estActif?: boolean;
+  }): Promise<{ ok: boolean; instruction?: AiInstruction; error?: string }> {
+    try {
+      const { status, data } = await apiFetchJson<{
+        ok?: boolean;
+        instruction?: AiInstruction;
+        error?: string;
+      }>('/api/ai-assistant', {
+        method: 'POST',
+        tokenOverride: adminBearerToken,
+        body: JSON.stringify({ action: 'save_instruction', ...payload }),
+      });
+      if (status >= 200 && status < 300 && data?.ok && data.instruction) {
+        return { ok: true, instruction: data.instruction };
+      }
+      return { ok: false, error: data?.error || 'Enregistrement impossible.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
+  static async toggleAiInstruction(id: string, estActif: boolean): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const { status, data } = await apiFetchJson<{ ok?: boolean; error?: string }>('/api/ai-assistant', {
+        method: 'POST',
+        tokenOverride: adminBearerToken,
+        body: JSON.stringify({ action: 'toggle_instruction', id, estActif }),
+      });
+      if (status >= 200 && status < 300 && data?.ok) {
+        return { ok: true };
+      }
+      return { ok: false, error: data?.error || 'Mise à jour impossible.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    }
+  }
+
+  static async deleteAiInstruction(id: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const { status, data } = await apiFetchJson<{ ok?: boolean; error?: string }>('/api/ai-assistant', {
+        method: 'POST',
+        tokenOverride: adminBearerToken,
+        body: JSON.stringify({ action: 'delete_instruction', id }),
+      });
+      if (status >= 200 && status < 300 && data?.ok) {
+        return { ok: true };
+      }
+      return { ok: false, error: data?.error || 'Suppression impossible.' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
     }
   }
 }

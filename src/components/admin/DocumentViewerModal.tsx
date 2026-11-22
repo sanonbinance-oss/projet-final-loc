@@ -16,10 +16,27 @@ import {
   CheckCircle2,
   XCircle,
   FileSearch,
-  ExternalLink,
-  Send
+  Send,
+  RefreshCw
 } from 'lucide-react';
 import { AdmissionRequest } from '../../types';
+import { SupabaseSyncService } from '../../services/supabaseClient';
+
+interface ResolvedDocState {
+  loading: boolean;
+  url: string | null;
+  mimeType: string;
+  error?: string;
+}
+
+function isSafeDisplayUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return (
+    url.startsWith('blob:') ||
+    url.startsWith('data:image/') ||
+    url.startsWith('data:application/pdf')
+  );
+}
 
 const QUICK_REJECTION_MOTIFS = [
   'Bulletin non conforme ou illisible',
@@ -47,6 +64,11 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
   const [activeDocTab, setActiveDocTab] = useState<'bulletin' | 'extrait'>('bulletin');
   const [showRejectInput, setShowRejectInput] = useState<boolean>(false);
   const [rejectionReason, setRejectionReason] = useState<string>('');
+  const [resolvedDoc, setResolvedDoc] = useState<ResolvedDocState>({
+    loading: false,
+    url: null,
+    mimeType: '',
+  });
 
   useEffect(() => {
     setShowRejectInput(false);
@@ -54,6 +76,64 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
     setZoomLevel(100);
     setActiveDocTab('bulletin');
   }, [admission?.id, isOpen]);
+
+  const rawDocUrl =
+    activeDocTab === 'extrait' ? admission?.extraitNaissanceUrl : admission?.bulletinUrl;
+
+  useEffect(() => {
+    if (!isOpen || !rawDocUrl) {
+      setResolvedDoc({ loading: false, url: null, mimeType: '' });
+      return;
+    }
+
+    if (!rawDocUrl.startsWith('/api/documents?')) {
+      const mime = rawDocUrl.startsWith('data:application/pdf')
+        ? 'application/pdf'
+        : rawDocUrl.startsWith('data:image/')
+        ? 'image/jpeg'
+        : '';
+      setResolvedDoc({
+        loading: false,
+        url: isSafeDisplayUrl(rawDocUrl) ? rawDocUrl : null,
+        mimeType: mime,
+      });
+      return;
+    }
+
+    let cancelled = false;
+    let createdBlobUrl: string | null = null;
+    setResolvedDoc({ loading: true, url: null, mimeType: '' });
+
+    void (async () => {
+      const res = await SupabaseSyncService.fetchAuthenticatedDocumentBlob(rawDocUrl);
+      if (cancelled) {
+        if (res.blobUrl) URL.revokeObjectURL(res.blobUrl);
+        return;
+      }
+      if (res.ok && res.blobUrl) {
+        createdBlobUrl = res.blobUrl;
+        setResolvedDoc({
+          loading: false,
+          url: res.blobUrl,
+          mimeType: res.mimeType || '',
+        });
+      } else {
+        setResolvedDoc({
+          loading: false,
+          url: null,
+          mimeType: '',
+          error: res.error || 'Document indisponible',
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (createdBlobUrl) {
+        URL.revokeObjectURL(createdBlobUrl);
+      }
+    };
+  }, [isOpen, rawDocUrl]);
 
   if (!isOpen || !admission) return null;
 
@@ -166,95 +246,121 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
             style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
             className="transition-transform duration-150 w-full max-w-2xl bg-white text-slate-900 rounded-xl shadow-2xl p-6 sm:p-8 border border-slate-300 relative select-text"
           >
-            {activeDocTab === 'extrait' ? (
-              admission.extraitNaissanceUrl && admission.extraitNaissanceUrl.startsWith('data:image') ? (
-                <div className="space-y-4">
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-3 py-2 rounded-lg text-xs flex items-center gap-2">
+            {resolvedDoc.loading ? (
+              <div className="py-16 text-center space-y-3">
+                <RefreshCw className="w-7 h-7 animate-spin text-emerald-700 mx-auto" />
+                <p className="text-xs font-semibold text-slate-600">
+                  Chargement sécurisé du document depuis la base de données...
+                </p>
+              </div>
+            ) : resolvedDoc.error ? (
+              <div className="p-6 bg-rose-50 border border-rose-200 rounded-xl text-center text-xs text-rose-700 space-y-1">
+                <AlertTriangle className="w-5 h-5 mx-auto text-rose-600" />
+                <p className="font-bold">Impossible d'ouvrir la pièce jointe</p>
+                <p>{resolvedDoc.error}</p>
+              </div>
+            ) : resolvedDoc.url && isSafeDisplayUrl(resolvedDoc.url) && resolvedDoc.mimeType.includes('pdf') ? (
+              <div className="space-y-3">
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
                     <span>
-                      Extrait de naissance téléversé ({admission.extraitNaissanceNomFichier || 'extrait_naissance.jpg'})
+                      Document PDF téléversé (
+                      {activeDocTab === 'extrait'
+                        ? admission.extraitNaissanceNomFichier || 'extrait_naissance.pdf'
+                        : admission.bulletinNomFichier || 'bulletin_officiel.pdf'}
+                      )
                     </span>
-                  </div>
-                  <img
-                    src={admission.extraitNaissanceUrl}
-                    alt="Extrait de naissance téléversé"
-                    className="w-full max-h-[600px] object-contain rounded-lg border border-slate-200"
-                  />
+                  </span>
+                  <a
+                    href={resolvedDoc.url}
+                    download={
+                      activeDocTab === 'extrait'
+                        ? admission.extraitNaissanceNomFichier || 'extrait_naissance.pdf'
+                        : admission.bulletinNomFichier || 'bulletin_officiel.pdf'
+                    }
+                    className="px-2.5 py-1 rounded bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1 shrink-0"
+                  >
+                    <Download className="w-3 h-3" /> Télécharger PDF
+                  </a>
                 </div>
-              ) : admission.extraitNaissanceUrl && admission.extraitNaissanceUrl.startsWith('data:application/pdf') ? (
-                <div className="space-y-3">
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                      <span>PDF Extrait de naissance ({admission.extraitNaissanceNomFichier})</span>
-                    </span>
-                    <a
-                      href={admission.extraitNaissanceUrl}
-                      download={admission.extraitNaissanceNomFichier || 'extrait_naissance.pdf'}
-                      className="px-2.5 py-1 rounded bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1"
-                    >
-                      <Download className="w-3 h-3" /> Télécharger PDF
-                    </a>
-                  </div>
-                  <iframe
-                    src={admission.extraitNaissanceUrl}
-                    title="Extrait de naissance PDF"
-                    className="w-full h-[520px] rounded-lg border border-slate-200"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between">
-                    <div className="text-left text-xs leading-tight">
-                      <p className="font-extrabold text-[13px] uppercase text-slate-900">BURKINA FASO</p>
-                      <p className="text-[10px] text-slate-600 italic">Unité - Progrès - Justice</p>
-                      <p className="text-[11px] font-semibold text-slate-800 mt-1">ÉTAT CIVIL</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="inline-block px-3 py-1 bg-slate-900 text-white font-extrabold text-xs tracking-wider rounded uppercase">
-                        EXTRAIT D'ACTE DE NAISSANCE
-                      </span>
-                      <p className="text-[10px] font-mono text-slate-500 mt-1">
-                        Pièce jointe : {admission.extraitNaissanceNomFichier || 'Non renseignée'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 text-xs">
-                    <div className="flex justify-between border-b border-slate-200 pb-2">
-                      <span className="text-slate-500">Nom de l'enfant :</span>
-                      <span className="font-extrabold text-slate-900">{admission.nomEnfant.toUpperCase()}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-200 pb-2">
-                      <span className="text-slate-500">Prénom(s) :</span>
-                      <span className="font-extrabold text-slate-900">{admission.prenomEnfant}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-200 pb-2">
-                      <span className="text-slate-500">Date de naissance déclarée :</span>
-                      <span className="font-mono font-bold text-slate-900">{admission.dateNaissance || 'Non précisée'}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-200 pb-2">
-                      <span className="text-slate-500">Parent / Responsable légal :</span>
-                      <span className="font-bold text-slate-900">{admission.nomParent}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Domicile déclaré :</span>
-                      <span className="font-medium text-slate-800">{admission.adresse}</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            ) : admission.bulletinUrl && admission.bulletinUrl.startsWith('data:image') ? (
+                <iframe
+                  src={resolvedDoc.url}
+                  title={activeDocTab === 'extrait' ? 'Extrait de naissance PDF' : 'Bulletin scolaire PDF'}
+                  className="w-full h-[540px] rounded-lg border border-slate-200"
+                />
+              </div>
+            ) : resolvedDoc.url && isSafeDisplayUrl(resolvedDoc.url) ? (
               <div className="space-y-4">
-                <div className="bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2 rounded-lg text-xs flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <span>Document téléversé directement par le parent ({admission.bulletinNomFichier || 'bulletin_officiel.jpg'})</span>
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>
+                      Image téléversée par le parent (
+                      {activeDocTab === 'extrait'
+                        ? admission.extraitNaissanceNomFichier || 'extrait_naissance.jpg'
+                        : admission.bulletinNomFichier || 'bulletin_officiel.jpg'}
+                      )
+                    </span>
+                  </span>
+                  <a
+                    href={resolvedDoc.url}
+                    download={
+                      activeDocTab === 'extrait'
+                        ? admission.extraitNaissanceNomFichier || 'extrait_naissance.jpg'
+                        : admission.bulletinNomFichier || 'bulletin_officiel.jpg'
+                    }
+                    className="px-2.5 py-1 rounded bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1 shrink-0"
+                  >
+                    <Download className="w-3 h-3" /> Télécharger
+                  </a>
                 </div>
-                <img 
-                  src={admission.bulletinUrl} 
-                  alt="Bulletin téléversé" 
+                <img
+                  src={resolvedDoc.url}
+                  alt={activeDocTab === 'extrait' ? 'Extrait de naissance téléversé' : 'Bulletin téléversé'}
                   className="w-full max-h-[600px] object-contain rounded-lg border border-slate-200"
                 />
+              </div>
+            ) : activeDocTab === 'extrait' ? (
+              <div className="space-y-6">
+                <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between">
+                  <div className="text-left text-xs leading-tight">
+                    <p className="font-extrabold text-[13px] uppercase text-slate-900">BURKINA FASO</p>
+                    <p className="text-[10px] text-slate-600 italic">Unité - Progrès - Justice</p>
+                    <p className="text-[11px] font-semibold text-slate-800 mt-1">ÉTAT CIVIL</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="inline-block px-3 py-1 bg-slate-900 text-white font-extrabold text-xs tracking-wider rounded uppercase">
+                      EXTRAIT D'ACTE DE NAISSANCE
+                    </span>
+                    <p className="text-[10px] font-mono text-slate-500 mt-1">
+                      Pièce jointe : {admission.extraitNaissanceNomFichier || 'Non renseignée'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 text-xs">
+                  <div className="flex justify-between border-b border-slate-200 pb-2">
+                    <span className="text-slate-500">Nom de l'enfant :</span>
+                    <span className="font-extrabold text-slate-900">{admission.nomEnfant.toUpperCase()}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-200 pb-2">
+                    <span className="text-slate-500">Prénom(s) :</span>
+                    <span className="font-extrabold text-slate-900">{admission.prenomEnfant}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-200 pb-2">
+                    <span className="text-slate-500">Date de naissance déclarée :</span>
+                    <span className="font-mono font-bold text-slate-900">{admission.dateNaissance || 'Non précisée'}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-slate-200 pb-2">
+                    <span className="text-slate-500">Parent / Responsable légal :</span>
+                    <span className="font-bold text-slate-900">{admission.nomParent}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Domicile déclaré :</span>
+                    <span className="font-medium text-slate-800">{admission.adresse}</span>
+                  </div>
+                </div>
               </div>
             ) : (
               /* High-fidelity official Burkina Faso academic report card certificate */

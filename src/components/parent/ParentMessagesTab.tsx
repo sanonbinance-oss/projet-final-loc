@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Mail,
   XCircle,
@@ -12,10 +12,14 @@ import {
   AlertTriangle,
   Inbox,
   School,
+  ShieldCheck,
+  ShieldAlert,
+  RotateCw,
 } from 'lucide-react';
-import { AdmissionRequest, Payment, Student } from '../../types';
+import { AdmissionRequest, ParentAccount, Payment, Student } from '../../types';
 import { SchoolStore } from '../../services/store';
 import { SyncService } from '../../services/sync';
+import { SupabaseSyncService } from '../../services/supabaseClient';
 
 function getScopedReadStorageKey(): string {
   return `edupay_parent_read_messages_v5__${SchoolStore.getScope()}`;
@@ -170,6 +174,7 @@ export function getUnreadParentMessagesCount(
 }
 
 interface ParentMessagesTabProps {
+  parentAccount: ParentAccount | null;
   admissions: AdmissionRequest[];
   payments: Payment[];
   students: Student[];
@@ -177,9 +182,11 @@ interface ParentMessagesTabProps {
   onGoToAdmission: () => void;
   onGoToPaymentWithStudent: (student: Student) => void;
   onOpenReceipt: (payment: Payment) => void;
+  onSessionInvalid?: () => void;
 }
 
 export const ParentMessagesTab: React.FC<ParentMessagesTabProps> = ({
+  parentAccount,
   admissions,
   payments,
   students,
@@ -187,13 +194,69 @@ export const ParentMessagesTab: React.FC<ParentMessagesTabProps> = ({
   onGoToAdmission,
   onGoToPaymentWithStudent,
   onOpenReceipt,
+  onSessionInvalid,
 }) => {
   const [filter, setFilter] = useState<'ALL' | 'UNREAD' | 'REFUSED' | 'ACCEPTED' | 'PAYMENTS'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [validationState, setValidationState] = useState<'checking' | 'authorized' | 'denied'>('checking');
+  const [verifiedOwnerId, setVerifiedOwnerId] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [validationRetryKey, setValidationRetryKey] = useState(0);
+  const onSessionInvalidRef = useRef(onSessionInvalid);
+  onSessionInvalidRef.current = onSessionInvalid;
+
+  useEffect(() => {
+    let cancelled = false;
+    setValidationState('checking');
+    setVerifiedOwnerId(null);
+    setValidationError(null);
+
+    const verifyOwnerToken = async () => {
+      const res = await SupabaseSyncService.validateParentToken(parentAccount?.id);
+      if (cancelled) return;
+
+      if (res.valid && res.parent?.id) {
+        setVerifiedOwnerId(res.parent.id);
+        setValidationState('authorized');
+        setValidationError(null);
+        return;
+      }
+
+      setVerifiedOwnerId(null);
+      setValidationState('denied');
+      setValidationError(res.error || 'Accès refusé : jeton de session non valide.');
+      if (res.unauthorized && onSessionInvalidRef.current) {
+        onSessionInvalidRef.current();
+      }
+    };
+
+    void verifyOwnerToken();
+    return () => {
+      cancelled = true;
+    };
+  }, [parentAccount?.id, validationRetryKey]);
+
+  // Filtrage strict par propriétaire validé par le serveur (aucune fuite inter-utilisateurs)
+  const ownedData = useMemo(() => {
+    if (validationState !== 'authorized' || !verifiedOwnerId) {
+      return { students: [] as Student[], admissions: [] as AdmissionRequest[], payments: [] as Payment[] };
+    }
+    const ownedStudents = students.filter((s) => s.parentCompteId === verifiedOwnerId);
+    const ownedStudentIds = new Set(ownedStudents.map((s) => s.id));
+    const ownedAdmissions = admissions.filter((a) => a.parentCompteId === verifiedOwnerId);
+    const ownedPayments = payments.filter(
+      (p) => p.parentCompteId === verifiedOwnerId || ownedStudentIds.has(p.studentId)
+    );
+    return {
+      students: ownedStudents,
+      admissions: ownedAdmissions,
+      payments: ownedPayments,
+    };
+  }, [validationState, verifiedOwnerId, students, admissions, payments]);
 
   const allMessages = useMemo(
-    () => buildParentMessages(admissions, payments),
-    [admissions, payments]
+    () => buildParentMessages(ownedData.admissions, ownedData.payments),
+    [ownedData]
   );
 
   const readSet = useMemo(() => new Set(readMessageIds), [readMessageIds]);
@@ -246,15 +309,74 @@ export const ParentMessagesTab: React.FC<ParentMessagesTabProps> = ({
           (msg.matriculeAttribue && s.matricule === msg.matriculeAttribue) ||
           `${s.prenom} ${s.nom}`.toLowerCase() === msg.childName.toLowerCase()
       );
-    let matchingStudent = findMatch(students);
+    let matchingStudent = findMatch(ownedData.students);
     if (!matchingStudent) {
       await SyncService.synchroniserMaintenant();
-      matchingStudent = findMatch(SchoolStore.getStudents());
+      matchingStudent = findMatch(
+        SchoolStore.getStudents().filter((s) => s.parentCompteId === verifiedOwnerId)
+      );
     }
     if (matchingStudent) {
       onGoToPaymentWithStudent(matchingStudent);
     }
   };
+
+  if (validationState === 'checking') {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-sm space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto">
+            <ShieldCheck className="w-6 h-6 animate-pulse" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-900">
+            Vérification de votre accès sécurisé...
+          </h3>
+          <p className="text-xs text-slate-500">
+            Contrôle d'identité en cours auprès du serveur avant l'affichage de vos messages privés.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (validationState === 'denied') {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-2xl border border-rose-200 p-8 sm:p-10 text-center shadow-sm space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-900">
+              Accès aux messages non autorisé
+            </h3>
+            <p className="text-xs text-rose-700 max-w-md mx-auto">
+              {validationError || 'Votre jeton de session est invalide ou ne correspond pas à ce compte.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setValidationRetryKey((k) => k + 1)}
+              className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Revérifier</span>
+            </button>
+            {onSessionInvalid && (
+              <button
+                type="button"
+                onClick={onSessionInvalid}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
+              >
+                Se reconnecter à mon espace
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">

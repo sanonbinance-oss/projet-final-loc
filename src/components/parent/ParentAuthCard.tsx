@@ -26,11 +26,15 @@ export const ParentAuthCard: React.FC<ParentAuthCardProps> = ({
   title = 'Mon Espace Personnel Famille',
   subtitle = 'Connectez-vous ou créez votre compte privé pour accéder uniquement à vos enfants, demandes d’admission, messages et reçus officiels.',
 }) => {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login');
   const [nomComplet, setNomComplet] = useState('');
   const [telephone, setTelephone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [resetStep, setResetStep] = useState<'request' | 'confirm'>('request');
+  const [resetInfo, setResetInfo] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -38,6 +42,46 @@ export const ParentAuthCard: React.FC<ParentAuthCardProps> = ({
     e.preventDefault();
     if (isLoading) return;
     setError('');
+
+    if (mode === 'reset') {
+      if (!telephone.trim()) {
+        setError('Veuillez saisir votre numéro de téléphone.');
+        return;
+      }
+      setIsLoading(true);
+      try {
+        if (resetStep === 'request') {
+          const res = await SupabaseSyncService.requestParentPasswordReset(telephone.trim());
+          if (res.ok) {
+            setResetInfo(
+              res.message ||
+                "Demandez votre code temporaire à 6 chiffres auprès du Secrétariat puis saisissez-le ci-dessous."
+            );
+            setResetStep('confirm');
+          } else {
+            setError(res.error || 'Demande impossible.');
+          }
+        } else {
+          if (!/^\d{6}$/.test(resetCode.trim()) || newPassword.length < 4) {
+            setError('Saisissez le code à 6 chiffres et un nouveau mot de passe (4+ caractères).');
+            return;
+          }
+          const res = await SupabaseSyncService.confirmParentPasswordReset({
+            telephone: telephone.trim(),
+            code: resetCode.trim(),
+            newPassword,
+          });
+          if (res.ok && res.parent) {
+            onAuthenticated(res.parent);
+          } else {
+            setError(res.error || 'Code invalide ou expiré.');
+          }
+        }
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
 
     if (!telephone.trim() || !password) {
       setError('Veuillez saisir votre numéro de téléphone et votre mot de passe.');
@@ -100,9 +144,10 @@ export const ParentAuthCard: React.FC<ParentAuthCardProps> = ({
           onClick={() => {
             setMode('login');
             setError('');
+            setResetInfo('');
           }}
           className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-            mode === 'login'
+            mode === 'login' || mode === 'reset'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
@@ -115,6 +160,7 @@ export const ParentAuthCard: React.FC<ParentAuthCardProps> = ({
           onClick={() => {
             setMode('register');
             setError('');
+            setResetInfo('');
           }}
           className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             mode === 'register'
@@ -128,109 +174,253 @@ export const ParentAuthCard: React.FC<ParentAuthCardProps> = ({
       </div>
 
       <form onSubmit={handleSubmit} className="p-6 space-y-4">
-        {mode === 'register' && (
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Nom & Prénom du Parent / Tuteur *
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <User className="w-4 h-4" />
+        {mode === 'reset' ? (
+          <>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="text-xs font-bold text-slate-900">
+                Récupération de mot de passe
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('login');
+                  setResetStep('request');
+                  setResetInfo('');
+                  setError('');
+                }}
+                className="text-xs font-semibold text-emerald-700 hover:underline cursor-pointer"
+              >
+                Retour connexion
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Votre numéro de téléphone *
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Phone className="w-4 h-4" />
+                </div>
+                <input
+                  type="tel"
+                  required
+                  value={telephone}
+                  onChange={(e) => setTelephone(e.target.value)}
+                  placeholder="Ex: 70 12 34 56"
+                  className="w-full pl-9 pr-3 py-2.5 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
               </div>
-              <input
-                type="text"
-                required
-                value={nomComplet}
-                onChange={(e) => setNomComplet(e.target.value)}
-                placeholder="Ex: Moussa Ouédraogo"
-                className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
             </div>
-          </div>
-        )}
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            Numéro de Téléphone *
-          </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-              <Phone className="w-4 h-4" />
-            </div>
-            <input
-              type="tel"
-              required
-              value={telephone}
-              onChange={(e) => setTelephone(e.target.value)}
-              placeholder="Ex: 70 12 34 56"
-              className="w-full pl-9 pr-3 py-2.5 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-            />
-          </div>
-        </div>
-
-        {mode === 'register' && (
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Adresse Email (facultatif)
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <Mail className="w-4 h-4" />
+            {resetInfo && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 leading-relaxed">
+                {resetInfo}
               </div>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="parent@exemple.bf"
-                className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
+            )}
+
+            {resetStep === 'confirm' && (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Code temporaire à 6 chiffres *
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    required
+                    value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Ex: 482910"
+                    className="w-full px-3 py-2.5 text-sm font-mono font-bold tracking-widest rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Nouveau mot de passe (4+ caractères) *
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="password"
+                      required
+                      minLength={4}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Choisissez votre nouveau mot de passe"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {error && (
+              <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+            >
+              {isLoading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Traitement...</span>
+                </>
+              ) : (
+                <span>
+                  {resetStep === 'request'
+                    ? 'Continuer la réinitialisation'
+                    : 'Valider le nouveau mot de passe'}
+                </span>
+              )}
+            </button>
+
+            {resetStep === 'request' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setResetStep('confirm');
+                }}
+                className="w-full text-center text-xs font-semibold text-slate-600 hover:text-emerald-700 cursor-pointer"
+              >
+                J'ai déjà reçu un code temporaire du secrétariat
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            {mode === 'register' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nom & Prénom du Parent / Tuteur *
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={nomComplet}
+                    onChange={(e) => setNomComplet(e.target.value)}
+                    placeholder="Ex: Moussa Ouédraogo"
+                    className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Numéro de Téléphone *
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Phone className="w-4 h-4" />
+                </div>
+                <input
+                  type="tel"
+                  required
+                  value={telephone}
+                  onChange={(e) => setTelephone(e.target.value)}
+                  placeholder="Ex: 70 12 34 56"
+                  className="w-full pl-9 pr-3 py-2.5 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+              </div>
             </div>
-          </div>
-        )}
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            Mot de passe personnel *
-          </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-              <Lock className="w-4 h-4" />
+            {mode === 'register' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Adresse Email (facultatif, pour récupération par mail)
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="parent@exemple.bf"
+                    className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Mot de passe personnel *
+                </label>
+                {mode === 'login' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('reset');
+                      setResetStep('request');
+                      setResetInfo('');
+                      setError('');
+                    }}
+                    className="text-[11px] font-semibold text-emerald-700 hover:underline cursor-pointer"
+                  >
+                    Mot de passe oublié ?
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <input
+                  type="password"
+                  required
+                  minLength={4}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === 'register' ? 'Minimum 4 caractères' : 'Votre mot de passe'}
+                  className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+              </div>
             </div>
-            <input
-              type="password"
-              required
-              minLength={4}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === 'register' ? 'Minimum 4 caractères' : 'Votre mot de passe'}
-              className="w-full pl-9 pr-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-            />
-          </div>
-        </div>
 
-        {error && (
-          <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
+            {error && (
+              <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+            >
+              {isLoading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>{mode === 'login' ? 'Connexion...' : 'Création en cours...'}</span>
+                </>
+              ) : (
+                <span>
+                  {mode === 'login' ? 'Accéder à mon Espace Parent' : 'Créer mon Espace Privé'}
+                </span>
+              )}
+            </button>
+          </>
         )}
-
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
-        >
-          {isLoading ? (
-            <>
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              <span>{mode === 'login' ? 'Connexion...' : 'Création en cours...'}</span>
-            </>
-          ) : (
-            <span>
-              {mode === 'login' ? 'Accéder à mon Espace Parent' : 'Créer mon Espace Privé'}
-            </span>
-          )}
-        </button>
       </form>
     </div>
   );

@@ -312,6 +312,41 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
         details JSONB,
         niveau_gravite VARCHAR(20) NOT NULL DEFAULT 'INFO'
       );
+
+      CREATE TABLE IF NOT EXISTS fichiers_documents (
+        id VARCHAR(64) PRIMARY KEY,
+        owner_parent_id VARCHAR(50),
+        demande_id VARCHAR(50),
+        doc_type VARCHAR(30) NOT NULL,
+        file_name VARCHAR(255) NOT NULL,
+        mime_type VARCHAR(100) NOT NULL,
+        size_bytes INT NOT NULL,
+        content_data BYTEA NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS reinitialisations_mdp (
+        id VARCHAR(64) PRIMARY KEY,
+        parent_id VARCHAR(50) NOT NULL REFERENCES comptes_parents(id) ON DELETE CASCADE,
+        telephone_normalise VARCHAR(50) NOT NULL,
+        code_hash TEXT NOT NULL,
+        generated_by VARCHAR(150),
+        attempts INT NOT NULL DEFAULT 0,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        used_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS instructions_ia (
+        id VARCHAR(64) PRIMARY KEY,
+        categorie VARCHAR(40) NOT NULL DEFAULT 'INFO',
+        titre VARCHAR(200) NOT NULL,
+        contenu TEXT NOT NULL,
+        auteur VARCHAR(150) NOT NULL DEFAULT 'Secrétariat',
+        est_actif BOOLEAN NOT NULL DEFAULT TRUE,
+        date_creation TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        date_modification TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     // Add missing columns safely for pre-existing tables
@@ -337,6 +372,10 @@ async function runSchemaBootstrap(pool: pg.Pool): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_paiements_parent ON paiements(parent_compte_id);
       CREATE INDEX IF NOT EXISTS idx_paiements_date ON paiements(date_paiement);
       CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_activites(date_action DESC);
+      CREATE INDEX IF NOT EXISTS idx_docs_owner ON fichiers_documents(owner_parent_id);
+      CREATE INDEX IF NOT EXISTS idx_docs_demande ON fichiers_documents(demande_id);
+      CREATE INDEX IF NOT EXISTS idx_reset_parent ON reinitialisations_mdp(parent_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_ia_actif ON instructions_ia(est_actif, date_modification DESC);
     `);
 
     const defaultAdminHash = hashSecret('1234');
@@ -588,7 +627,7 @@ export async function readJsonBody(req: ApiRequest): Promise<Record<string, unkn
     let size = 0;
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
-      if (size <= 3 * 1024 * 1024) {
+      if (size <= 6 * 1024 * 1024) {
         chunks.push(chunk);
       }
     });

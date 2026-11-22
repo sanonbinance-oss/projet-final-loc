@@ -31,6 +31,7 @@ import { ReenrollmentModal } from './ReenrollmentModal';
 import { ParentMessagesTab, buildParentMessages } from './ParentMessagesTab';
 import { ParentAuthCard, LinkChildModal } from './ParentAuthCard';
 import { ParentHistoryTab } from './ParentHistoryTab';
+import { ParentAiAssistant } from './ParentAiAssistant';
 
 interface ParentPortalProps {
   parentAccount: ParentAccount | null;
@@ -87,6 +88,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const [lastCompletedPayment, setLastCompletedPayment] = useState<Payment | null>(null);
   const [pendingVerificationPayment, setPendingVerificationPayment] = useState<Payment | null>(null);
   const [rejectionMessage, setRejectionMessage] = useState<string | null>(null);
+  const [paymentFormError, setPaymentFormError] = useState<string>('');
 
   // Restaure un paiement Mobile Money en attente après rechargement mobile et débloque dès validation secrétaire
   useEffect(() => {
@@ -202,15 +204,16 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
   const handleOpenOtpModal = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudent) return;
+    setPaymentFormError('');
 
     const finalMontant = Number(customMontant) || 0;
     if (finalMontant <= 0 && montantDon <= 0) {
-      alert('Veuillez spécifier un montant de scolarité ou un don supérieur à 0 FCFA.');
+      setPaymentFormError('Veuillez spécifier un montant de scolarité ou un don supérieur à 0 FCFA.');
       return;
     }
 
     if (!telephonePayeur || telephonePayeur.trim().length < 8) {
-      alert('Veuillez saisir un numéro de téléphone valide pour recevoir le code OTP.');
+      setPaymentFormError('Veuillez saisir un numéro de téléphone valide pour recevoir le code OTP.');
       return;
     }
 
@@ -257,7 +260,16 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
 
   const isAwaitingReenrollment = selectedStudent?.statutReinscription === 'EN_ATTENTE_REINSCRIPTION';
 
-  const parentMessages = buildParentMessages(admissions, payments);
+  const scopedStudentIds = new Set(
+    parentAccount ? students.filter((s) => s.parentCompteId === parentAccount.id).map((s) => s.id) : []
+  );
+  const scopedAdmissions = parentAccount
+    ? admissions.filter((a) => a.parentCompteId === parentAccount.id)
+    : [];
+  const scopedPayments = parentAccount
+    ? payments.filter((p) => p.parentCompteId === parentAccount.id || scopedStudentIds.has(p.studentId))
+    : [];
+  const parentMessages = buildParentMessages(scopedAdmissions, scopedPayments);
   const readSet = new Set(readMessageIds);
   const unreadMessages = parentMessages.filter((m) => !readSet.has(m.id));
   const latestUnreadRefusal = unreadMessages.find((m) => m.category === 'ADMISSION_REFUSEE');
@@ -1087,6 +1099,13 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
                         </div>
                       </div>
 
+                      {paymentFormError && (
+                        <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{paymentFormError}</span>
+                        </div>
+                      )}
+
                       <button
                         type="submit"
                         disabled={!selectedStudent}
@@ -1131,6 +1150,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
         {/* TAB MESSAGES: RÉPONSES & MOTIFS DU SECRÉTARIAT */}
         {parentAccount && activeTab === 'messages' && (
           <ParentMessagesTab
+            parentAccount={parentAccount}
             admissions={admissions}
             payments={payments}
             students={students}
@@ -1141,12 +1161,14 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
               setActiveTab('paiement');
             }}
             onOpenReceipt={onOpenReceipt}
+            onSessionInvalid={onParentLogout}
           />
         )}
 
         {/* TAB HISTORIQUE: REÇUS & FRATRIE */}
         {parentAccount && activeTab === 'historique' && (
           <ParentHistoryTab
+            parentAccount={parentAccount}
             students={students}
             admissions={admissions}
             payments={payments}
@@ -1158,6 +1180,7 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
             }}
             onGoToAdmission={() => setActiveTab('inscription')}
             onOpenVerifyReceipt={onOpenVerifyReceipt}
+            onSessionInvalid={onParentLogout}
           />
         )}
 
@@ -1299,6 +1322,9 @@ export const ParentPortal: React.FC<ParentPortalProps> = ({
           }}
         />
       )}
+
+      {/* Floating Parent AI Assistant (always live-synced with secretary instructions) */}
+      <ParentAiAssistant />
     </div>
   );
 };

@@ -864,6 +864,57 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
       return;
     }
 
+    if (action === 'reset_demo_data') {
+      if (!isStaff || session.staffRole !== 'DIRECTEUR') {
+        sendJson(res, 403, {
+          ok: false,
+          error: 'Seule la Direction peut réinitialiser la base pour passer en données réelles.',
+        });
+        return;
+      }
+
+      const includeParents = Boolean(body.includeParents);
+      const client = await db.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM paiements');
+        await client.query('DELETE FROM inscriptions_annuelles');
+        await client.query('DELETE FROM demandes_admission');
+        await client.query('DELETE FROM eleves');
+        await client.query('DELETE FROM fichiers_documents');
+        await client.query('DELETE FROM journal_activites');
+        if (includeParents) {
+          await client.query('DELETE FROM reinitialisations_mdp');
+          await client.query('DELETE FROM comptes_parents');
+        }
+        await client.query(
+          `INSERT INTO journal_activites (id, type_action, auteur, description, details, niveau_gravite)
+           VALUES ($1, 'INIT_BASE', $2, $3, $4, 'INFO')`,
+          [
+            'LOG_INIT_' + Date.now(),
+            session.author || 'Direction',
+            includeParents
+              ? 'Nettoyage complet effectué (élèves, demandes, paiements, pièces et comptes parents) : base prête pour les données réelles.'
+              : 'Nettoyage opérationnel effectué (élèves, demandes, paiements et pièces) : base prête pour les données réelles.',
+            JSON.stringify({ includeParents }),
+          ]
+        );
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        includeParents,
+        message: 'Base nettoyée et prête pour les données réelles.',
+      });
+      return;
+    }
+
     sendJson(res, 400, { ok: false, error: 'Action POST inconnue.' });
   } catch (err: unknown) {
     const pgErr = err as { code?: string; message?: string };

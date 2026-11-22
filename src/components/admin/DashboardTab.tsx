@@ -8,7 +8,7 @@ import {
   Receipt, 
   Smartphone
 } from 'lucide-react';
-import { AdmissionRequest, Payment, Student } from '../../types';
+import { AdminTab, AdmissionRequest, Payment, Student } from '../../types';
 import { PaymentService } from '../../services/paymentService';
 
 interface DashboardTabProps {
@@ -16,7 +16,7 @@ interface DashboardTabProps {
   payments: Payment[];
   admissions: AdmissionRequest[];
   onOpenReceipt: (payment: Payment) => void;
-  onNavigateToTab: (tab: 'dashboard' | 'guichet' | 'eleves' | 'demandes' | 'transactions' | 'tarifs' | 'journal' | 'equipe' | 'api') => void;
+  onNavigateToTab: (tab: AdminTab) => void;
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({
